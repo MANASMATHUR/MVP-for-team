@@ -545,7 +545,7 @@ export function InventoryTable() {
         
       {/* Voice Controls */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6">
-        <VoiceMic rows={rows} onAction={async (command) => {
+        <VoiceMic rows={rows} onAction={async (command): Promise<boolean> => {
             console.log('=== VOICE COMMAND DEBUG ===');
             console.log('Voice command received:', command);
             console.log('Current rows count:', rows.length);

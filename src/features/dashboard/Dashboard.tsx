@@ -20,15 +20,7 @@ interface EditionData {
   color: string;
 }
 
-interface RecentCall {
-  id: string;
-  player_name: string;
-  edition: string;
-  size: string;
-  status: 'completed' | 'pending' | 'failed';
-  created_at: string;
-  duration?: number;
-}
+// RecentCall type removed (recent calls feature not used in MVP)
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({
