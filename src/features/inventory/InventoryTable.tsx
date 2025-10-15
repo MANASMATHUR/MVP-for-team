@@ -658,6 +658,7 @@ export function InventoryTable() {
               } else {
                 console.log('No match found for add command');
                 toast.error(`No matching item found for ${edition} ${size ? 'size ' + size : ''} ${command.player_name ? 'for ' + command.player_name : ''}`);
+                return false;
               }
             } else if (command.type === 'remove') {
               const edition = command.edition || '';
@@ -689,6 +690,7 @@ export function InventoryTable() {
               } else {
                 console.log('No match found for remove command');
                 toast.error(`No matching item found for ${edition} ${size ? 'size ' + size : ''} ${command.player_name ? 'for ' + command.player_name : ''}`);
+                return false;
               }
             } else if (command.type === 'set') {
               const targetQty = Math.max(0, command.target_quantity || 0);
@@ -709,6 +711,8 @@ export function InventoryTable() {
                   (size ? r.size === size : true)
                 );
                 target = candidates.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+              } else {
+                return false;
               }
 
               if (target) {
@@ -760,7 +764,11 @@ export function InventoryTable() {
                   toast.success(`Recorded giveaway of ${decrement} ${target.edition} ${target.size}${recipient ? ' to ' + recipient : ''}`);
                   changed = true;
                   rememberSize(command.player_name || target.player_name, command.edition || target.edition, target.size);
+                } else {
+                  return false;
                 }
+              } else {
+                return false;
               }
             } else if (command.type === 'order') {
               if (!command.player_name || !command.edition) return;
@@ -833,6 +841,7 @@ export function InventoryTable() {
                 }
               } else {
                 toast.error('No matching items found to delete');
+                return false;
               }
             }
             
@@ -852,7 +861,7 @@ export function InventoryTable() {
             } catch (error) {
               console.error('Failed to refresh inventory data:', error);
             }
-            return changed;
+            return !!changed;
           }} />
       </div>
 

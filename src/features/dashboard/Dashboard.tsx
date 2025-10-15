@@ -42,7 +42,6 @@ export function Dashboard() {
     efficiencyScore: 0,
   });
   const [editionData, setEditionData] = useState<EditionData[]>([]);
-  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -104,8 +103,7 @@ export function Dashboard() {
         setEditionData(editionData);
       }
 
-      // Remove mock recent calls for enterprise build
-      setRecentCalls([]);
+      // Recent calls removed for enterprise build
 
       // Load recent activity
       const { data: activityLogs } = await supabase
