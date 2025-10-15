@@ -769,7 +769,7 @@ export function InventoryTable() {
                 return false;
               }
             } else if (command.type === 'order') {
-              if (!command.player_name || !command.edition) return;
+              if (!command.player_name || !command.edition) return false;
               const playerName = command.player_name as string;
               const edition = command.edition as string;
               const match = rows.find((r) =>
