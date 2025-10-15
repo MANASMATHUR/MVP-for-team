@@ -410,7 +410,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     };
 
     // Check for delete commands: "delete 5 city jerseys", "delete jalen green icon", "clear association"
-    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all') || lowerTranscript.includes('clear')) {
+    if (/(^|\s)(delete|remove all|clear)(\s|$)/i.test(lowerTranscript)) {
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
       const qtyMatch = lowerTranscript.match(/(\d+)/);

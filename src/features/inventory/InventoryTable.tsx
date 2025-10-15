@@ -792,7 +792,8 @@ export function InventoryTable() {
               }
             } else if (command.type === 'delete') {
               const edition = command.edition || '';
-              const size = command.size && command.size.trim() ? command.size : resolveDefaultSize(command);
+              // For delete, only filter by size if the user explicitly said a size.
+              const size = command.size && command.size.trim() ? command.size : '';
               const playerName = command.player_name;
               const quantityToDelete = command.quantity || 1; // Default to 1 if no quantity specified
 
