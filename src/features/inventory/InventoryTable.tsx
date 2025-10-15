@@ -711,8 +711,6 @@ export function InventoryTable() {
                   (size ? r.size === size : true)
                 );
                 target = candidates.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-              } else {
-                return false;
               }
 
               if (target) {
