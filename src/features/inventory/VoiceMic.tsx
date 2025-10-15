@@ -409,8 +409,8 @@ export function VoiceMic({ rows, onAction }: Props) {
       return undefined;
     };
 
-    // Check for delete commands: "delete 5 city jerseys", "delete jalen green icon"
-    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all')) {
+    // Check for delete commands: "delete 5 city jerseys", "delete jalen green icon", "clear association"
+    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all') || lowerTranscript.includes('clear')) {
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
       const qtyMatch = lowerTranscript.match(/(\d+)/);
@@ -425,8 +425,8 @@ export function VoiceMic({ rows, onAction }: Props) {
       };
     }
 
-    // Check for add commands
-    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus')) {
+    // Check for add/increase commands
+    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus') || lowerTranscript.includes('increase') || lowerTranscript.includes('inc ')) {
       const qtyMatch = lowerTranscript.match(/(\d+)/);
       // More comprehensive regex for all editions
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
@@ -451,8 +451,8 @@ export function VoiceMic({ rows, onAction }: Props) {
       return command;
     }
 
-    // Check for remove commands
-    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus')) {
+    // Check for remove/decrease commands
+    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus') || lowerTranscript.includes('decrease') || lowerTranscript.includes('dec ')) {
       const qtyMatch = lowerTranscript.match(/(\d+)/);
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
@@ -467,13 +467,26 @@ export function VoiceMic({ rows, onAction }: Props) {
       };
     }
 
-    // Check for set commands
-    if (lowerTranscript.includes('set') && lowerTranscript.includes('to')) {
+    // Check for set/update commands
+    if ((lowerTranscript.includes('set') || lowerTranscript.includes('update')) && lowerTranscript.includes('to')) {
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeToMatch = lowerTranscript.match(/size\s+to\s+(\d+)/i); // e.g., "update icon jersey size to 32"
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
       const toMatch = lowerTranscript.match(/\bto\s+(\d+)/i);
       const playerName = extractPlayerName(transcript);
+
+      if (sizeToMatch) {
+        // Intent: set SIZE to a value
+        return {
+          type: 'set',
+          player_name: playerName,
+          edition: normalizeEdition(editionMatch?.[1]),
+          size: sizeToMatch?.[1],
+          notes: 'set_size',
+        };
+      }
       
+      // Otherwise: set inventory to a target quantity
       return {
         type: 'set',
         player_name: playerName,

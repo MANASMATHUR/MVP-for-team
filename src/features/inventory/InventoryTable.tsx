@@ -713,11 +713,21 @@ export function InventoryTable() {
                 target = candidates.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
               }
 
+              // If notes indicate set_size intent, update the size itself
+              if ((command as any).notes === 'set_size' && target) {
+                await updateField(target, { size });
+                toast.success(`Set size for ${target.player_name} ${target.edition} to ${size}`);
+                rememberSize(command.player_name || target.player_name, command.edition || target.edition, size);
+                return true;
+              }
+
               if (target) {
                 await updateField(target, { qty_inventory: targetQty });
                 toast.success(`Set ${target.player_name} ${target.edition} size ${target.size} to ${targetQty}`);
                 rememberSize(command.player_name || target.player_name, command.edition || target.edition, target.size);
                 changed = true;
+              } else {
+                return false;
               }
             } else if (command.type === 'turn_in') {
               const qty = Math.max(1, command.quantity || 1);
