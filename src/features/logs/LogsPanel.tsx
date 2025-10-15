@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { getCallLogs } from '../../integrations/voiceflow';
-import type { CallLog } from '../../integrations/voiceflow';
 import { Phone, Clock, CheckCircle, XCircle, AlertCircle, Activity } from 'lucide-react';
+
+interface CallLog {
+  id: string;
+  player_name: string;
+  edition: string;
+  size: string;
+  status: 'initiated' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
+  created_at?: string;
+  duration_seconds?: number;
+  transcript?: string;
+  order_placed: boolean;
+  order_details?: any;
+  error_message?: string;
+  initiated_by?: string;
+}
 
 interface LogRow {
   id: string;
@@ -11,6 +24,21 @@ interface LogRow {
   action: string;
   details: any;
 }
+
+// Local function to get call logs
+const getCallLogs = async (limit: number = 50): Promise<CallLog[]> => {
+  const { data, error } = await supabase
+    .from('call_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+    
+  if (error) {
+    throw new Error(`Failed to fetch call logs: ${error.message}`);
+  }
+  
+  return data || [];
+};
 
 export function LogsPanel() {
   const [activityLogs, setActivityLogs] = useState<LogRow[]>([]);

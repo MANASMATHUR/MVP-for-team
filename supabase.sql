@@ -48,7 +48,7 @@ begin
   end if;
 end $$;
 
--- Call logs for Voiceflow integration
+-- Call logs
 create table if not exists public.call_logs (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -57,7 +57,6 @@ create table if not exists public.call_logs (
   size text not null,
   status text not null check (status in ('initiated', 'in_progress', 'completed', 'failed', 'cancelled')),
   duration_seconds integer,
-  voiceflow_session_id text,
   transcript text,
   order_placed boolean default false,
   order_details jsonb,
@@ -220,7 +219,7 @@ begin
   end if;
 end $$;
 
--- Call logs for Voiceflow integration
+-- Call logs
 create table if not exists public.call_logs (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -229,7 +228,6 @@ create table if not exists public.call_logs (
   size text not null,
   status text not null check (status in ('initiated', 'in_progress', 'completed', 'failed', 'cancelled')),
   duration_seconds integer,
-  voiceflow_session_id text,
   transcript text,
   order_placed boolean default false,
   order_details jsonb,

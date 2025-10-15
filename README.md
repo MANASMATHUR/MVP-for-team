@@ -8,8 +8,8 @@ A comprehensive inventory management system for professional basketball teams, f
 - **Modern Dashboard**: Real-time analytics and insights
 - **Inventory Management**: Track jersey inventory with advanced filtering and sorting
 - **Voice Commands**: Use natural language to manage inventory
-- **Automated Ordering**: AI-powered order optimization and Voiceflow integration
-- **Call Logging**: Track all order calls with detailed analytics
+- **Automated Ordering**: AI-powered order optimization
+- **Call Logging**: Track order-related log entries
 - **Real-time Notifications**: Low stock alerts and system updates
 
 ### 🤖 AI-Powered Features
@@ -29,7 +29,7 @@ A comprehensive inventory management system for professional basketball teams, f
 - **Frontend**: React 18, TypeScript, Tailwind CSS
 - **Backend**: Supabase (PostgreSQL, Auth, Real-time)
 - **AI**: OpenAI GPT-4o-mini
-- **Voice**: Voiceflow API integration
+// Voice handled in-browser via MediaRecorder or Web Speech API
 - **Charts**: Recharts
 - **Icons**: Lucide React
 - **Notifications**: React Hot Toast
@@ -55,11 +55,6 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 # OpenAI API Configuration
 VITE_OPENAI_API_KEY=your_openai_api_key
 
-# Voiceflow API Configuration
-VITE_VOICEFLOW_API_URL=your_voiceflow_api_url
-VITE_VOICEFLOW_API_KEY=your_voiceflow_api_key
-VITE_VOICEFLOW_CALL_API_URL=your_voiceflow_call_api_url
-VITE_VOICEFLOW_CALL_API_KEY=your_voiceflow_call_api_key
 
 # Make.com Webhook Configuration
 VITE_MAKE_WEBHOOK_URL=your_make_webhook_url
@@ -88,10 +83,7 @@ npm run dev
 - **Report Generation**: Automated business reports
 - **Email Drafting**: Professional reorder emails
 
-### Voiceflow
-- **Voice Commands**: Natural language processing for inventory management
-- **Order Calls**: Automated phone calls for ordering
-- **Call Logging**: Detailed call tracking and analytics
+// Voiceflow integration removed in MVP (voice handled locally/OpenAI)
 
 ### Make.com
 - **Webhooks**: Low stock notifications and alerts
@@ -131,7 +123,7 @@ Try these voice commands:
 - `jerseys`: Main inventory items
 - `settings`: System configuration
 - `activity_logs`: Audit trail
-- `call_logs`: Order call tracking
+// `call_logs`: (optional) generic call tracking if used
 - `inventory_alerts`: Low stock notifications
 - `user_preferences`: User-specific settings
 - `inventory_analytics`: Historical data

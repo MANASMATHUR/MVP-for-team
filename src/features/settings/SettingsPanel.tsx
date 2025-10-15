@@ -34,7 +34,7 @@ export function SettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [improvements, setImprovements] = useState<string[]>([]);
-  const [diag, setDiag] = useState<{ supabase: boolean; voiceflowServerEnv: boolean; makeWebhook: boolean; openai: boolean; dryRunCall?: string } | null>(null);
+  const [diag, setDiag] = useState<{ supabase: boolean; makeWebhook: boolean; openai: boolean } | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
 
   useEffect(() => {
@@ -131,23 +131,11 @@ export function SettingsPanel() {
     setDiagRunning(true);
     try {
       const supabaseOk = !!(await supabase.from('settings').select('id').limit(1)).data;
-      const voiceflowServerEnv = !!(import.meta.env.VITE_VOICEFLOW_API_URL) || true; // server vars not readable here
+      // Voiceflow integration removed
       const makeWebhookOk = !!import.meta.env.VITE_MAKE_WEBHOOK_URL;
       const openaiOk = !!import.meta.env.VITE_OPENAI_API_KEY;
 
-      // Do a dry-run start-call which should return ok without hitting provider
-      let dryRunId = '';
-      try {
-        const res = await fetch('/api/start-call', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ call_log_id: 'healthcheck', order_details: { test: true }, dry_run: true })
-        });
-        const json = await res.json();
-        dryRunId = json?.session_id || '';
-      } catch {}
-
-      setDiag({ supabase: !!supabaseOk, voiceflowServerEnv, makeWebhook: makeWebhookOk, openai: openaiOk, dryRunCall: dryRunId });
+      setDiag({ supabase: !!supabaseOk, makeWebhook: makeWebhookOk, openai: openaiOk });
       toast.success('Diagnostics completed');
     } catch (e) {
       toast.error('Diagnostics failed');
@@ -392,27 +380,10 @@ export function SettingsPanel() {
             }`}></div>
           </div>
           
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Voiceflow API</p>
-              <p className="text-xs text-gray-500">Voice commands & calls</p>
-            </div>
-            <div className={`w-3 h-3 rounded-full ${
-              import.meta.env.VITE_VOICEFLOW_API_URL ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-          </div>
+          
         </div>
 
-        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-900 text-sm">
-          For outbound calling on Vercel, set server env vars in the Vercel project:
-          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-            <code className="bg-white px-2 py-1 rounded border border-gray-200">VOICEFLOW_CALL_API_URL</code>
-            <code className="bg-white px-2 py-1 rounded border border-gray-200">VOICEFLOW_CALL_API_KEY</code>
-            <code className="bg-white px-2 py-1 rounded border border-gray-200">SUPABASE_URL</code>
-            <code className="bg-white px-2 py-1 rounded border border-gray-200">SUPABASE_ANON_KEY</code>
-          </div>
-          <div className="mt-2 text-xs text-yellow-800">Optional (browser-side NLP): VITE_VOICEFLOW_API_URL, VITE_VOICEFLOW_API_KEY</div>
-        </div>
+        
 
         <div className="mt-4">
           <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
@@ -427,8 +398,6 @@ export function SettingsPanel() {
                 <span className={`px-2 py-0.5 rounded ${diag.supabase ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>Supabase</span>
                 <span className={`ml-2 px-2 py-0.5 rounded ${diag.makeWebhook ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>Make</span>
                 <span className={`ml-2 px-2 py-0.5 rounded ${diag.openai ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>OpenAI</span>
-                <span className={`ml-2 px-2 py-0.5 rounded ${diag.voiceflowServerEnv ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>Calling Env</span>
-                {diag.dryRunCall && <span className="ml-2 text-xs text-gray-500">dry_run: {diag.dryRunCall}</span>}
               </div>
             )}
           </div>

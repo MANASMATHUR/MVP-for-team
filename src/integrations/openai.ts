@@ -532,11 +532,14 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
             
             Examples:
             "Add 5 Jalen Green Icon jerseys size 48" -> {"type": "add", "player_name": "Jalen Green", "edition": "Icon", "size": "48", "quantity": 5}
+            "Add 5 City jerseys" -> {"type": "add", "edition": "City", "quantity": 5}
             "Remove 3 Statement jerseys" -> {"type": "remove", "edition": "Statement", "quantity": 3}
             "Set Jalen Green Icon size 48 to 10" -> {"type": "set", "player_name": "Jalen Green", "edition": "Icon", "size": "48", "target_quantity": 10}
             "Turn in 2 jerseys for Jalen Green" -> {"type": "turn_in", "player_name": "Jalen Green", "quantity": 2}
             "Delete all City edition jerseys" -> {"type": "delete", "edition": "City"}
-            "Order 5 Icon jerseys size 48" -> {"type": "order", "edition": "Icon", "size": "48", "quantity": 5}`
+            "Order 5 Icon jerseys size 48" -> {"type": "order", "edition": "Icon", "size": "48", "quantity": 5}
+            
+            Important: If no player name is specified, still process the command with just edition and quantity.`
           },
           {
             role: 'user',

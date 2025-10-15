@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { transcribeAudio, interpretVoiceCommandWithAI, type VoiceCommand } from '../../integrations/openai';
-import { interpretVoiceCommand } from '../../integrations/voiceflow';
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 interface Props {
   rows: JerseyItem[];
-  onAction: (command: VoiceCommand) => void | Promise<void>;
+  onAction: (command: VoiceCommand) => Promise<boolean> | boolean;
 }
 
 export function VoiceMic({ rows, onAction }: Props) {
@@ -19,6 +18,8 @@ export function VoiceMic({ rows, onAction }: Props) {
   const [processingStep, setProcessingStep] = useState<'idle' | 'recording' | 'transcribing' | 'interpreting' | 'executing' | 'success' | 'error'>('idle');
   const [lastCommand, setLastCommand] = useState<VoiceCommand | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [speechSynthesis, setSpeechSynthesis] = useState<SpeechSynthesis | null>(null);
+  const [hasSpokenGreeting, setHasSpokenGreeting] = useState(false);
 
   const playBeep = () => {
     try {
@@ -40,20 +41,161 @@ export function VoiceMic({ rows, onAction }: Props) {
     } catch {}
   };
 
+  const speak = (text: string) => {
+    console.log('=== SPEECH SYNTHESIS DEBUG ===');
+    console.log('Text to speak:', text);
+    console.log('Browser:', navigator.userAgent);
+    
+    // Check if speech synthesis is available globally
+    if (typeof window.speechSynthesis === 'undefined') {
+      console.error('Speech synthesis not supported in this browser');
+      alert('Speech synthesis is not supported in this browser. Please use Chrome, Edge, or Safari for voice functionality.');
+      return;
+    }
+    
+    const speechSynthesis = window.speechSynthesis;
+    if (!speechSynthesis) {
+      console.error('Speech synthesis not available');
+      alert('Speech synthesis is not available. Please refresh the page and try again.');
+      return;
+    }
+    
+    // Check if speech synthesis is speaking
+    if (speechSynthesis.speaking) {
+      console.log('Speech synthesis is already speaking, cancelling...');
+      speechSynthesis.cancel();
+    }
+    
+    // Wait a moment for cancellation
+    setTimeout(() => {
+      try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.8;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+        
+        // Add event listeners for debugging
+        utterance.onstart = () => {
+          console.log('✅ Speech started successfully');
+        };
+        
+        utterance.onend = () => {
+          console.log('✅ Speech ended successfully');
+        };
+        
+        utterance.onerror = (event) => {
+          console.error('❌ Speech error:', event.error, event);
+          alert(`Speech synthesis error: ${event.error}. Please try:\n1. Refresh the page\n2. Use Chrome, Edge, or Safari\n3. Check your browser's speech settings\n4. Ensure your system volume is on`);
+        };
+        
+        // Try to get a good voice, but don't fail if none found
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          // Try to find an English voice
+          const englishVoice = voices.find(voice => voice.lang.startsWith('en'));
+          if (englishVoice) {
+            utterance.voice = englishVoice;
+            console.log('Using English voice:', englishVoice.name);
+          } else {
+            console.log('Using default voice');
+          }
+        }
+        
+        console.log('Attempting to speak...');
+        speechSynthesis.speak(utterance);
+        console.log('speak() called successfully');
+        
+        // Verify speech started after a short delay
+        setTimeout(() => {
+          if (!speechSynthesis.speaking) {
+            console.warn('Speech may not have started, trying again...');
+            speechSynthesis.speak(utterance);
+          }
+        }, 500);
+        
+      } catch (error) {
+        console.error('Error creating utterance:', error);
+        alert(`Failed to create speech utterance: ${error}. Please refresh the page and try again.`);
+      }
+    }, 100);
+  };
+
+  const getGreetingMessage = () => {
+    const greetings = [
+      "Hello! How are you?",
+      "Hi there! How are you?",
+      "Hello! How are you?",
+      "Hi! How are you?"
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  };
+
+  const getConfirmationMessage = (command: VoiceCommand) => {
+    switch (command.type) {
+      case 'add':
+        return `Ok, added ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} to inventory.`;
+      case 'remove':
+        return `Ok, removed ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
+      case 'set':
+        return `Ok, set ${command.player_name || ''} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''} to ${command.target_quantity || 0} in inventory.`;
+      case 'delete':
+        return `Ok, deleted ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
+      case 'order':
+        return `Ok, order placed for ${command.quantity || 0} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''}.`;
+      case 'turn_in':
+        return `Ok, turned in ${command.quantity || 0} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.recipient ? ` to ${command.recipient}` : ''}.`;
+      default:
+        return "Ok, command executed successfully.";
+    }
+  };
+
   useEffect(() => {
     // Check for MediaRecorder support (required for OpenAI Whisper)
     const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
     const hasGetUserMedia = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
     const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
+    const hasSpeechSynthesis = typeof speechSynthesis !== 'undefined';
     
     console.log('MediaRecorder support:', hasMediaRecorder);
     console.log('getUserMedia support:', hasGetUserMedia);
     console.log('SpeechRecognition support:', hasSpeechRecognition);
+    console.log('SpeechSynthesis support:', hasSpeechSynthesis);
     
     if (!hasMediaRecorder && !hasSpeechRecognition) {
       console.warn('No voice recording support available');
       setSupported(false);
       return;
+    }
+    
+    // Initialize speech synthesis
+    if (hasSpeechSynthesis) {
+      console.log('Initializing speech synthesis...');
+      setSpeechSynthesis(window.speechSynthesis);
+      
+      // Load voices if they're not already loaded
+      const speechSynthesis = window.speechSynthesis;
+      if (speechSynthesis) {
+        const voices = speechSynthesis.getVoices();
+        console.log('Initial voices count:', voices.length);
+        
+        if (voices.length === 0) {
+          console.log('No voices loaded yet, waiting for voiceschanged event...');
+          speechSynthesis.addEventListener('voiceschanged', () => {
+            const newVoices = speechSynthesis.getVoices();
+            console.log('Voices loaded after event:', newVoices.length);
+            console.log('Available voices:', newVoices.map(v => v.name));
+          });
+        } else {
+          console.log('Voices already loaded:', voices.map(v => v.name));
+        }
+        
+        // Speech synthesis is ready
+        console.log('Speech synthesis initialized successfully');
+      }
+    } else {
+      console.log('Speech synthesis not supported');
+      alert('Speech synthesis is not supported in this browser. Please use Chrome, Edge, or Safari.');
     }
     
     setSupported(true);
@@ -65,6 +207,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     if (!SpeechRecognition) {
       console.error('Browser speech recognition not supported');
       setProcessingStep('error');
+      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
       return;
     }
     
@@ -73,12 +216,21 @@ export function VoiceMic({ rows, onAction }: Props) {
       recognition.lang = 'en-US';
       recognition.interimResults = true;
       recognition.continuous = false;
+      recognition.maxAlternatives = 1;
       
       recognition.onstart = () => {
         setListening(true);
         setProcessingStep('recording');
         setTranscript(''); // Clear previous transcript
         playBeep();
+        // Only speak greeting once per session
+        if (!hasSpokenGreeting) {
+          setTimeout(() => {
+            console.log('Speaking greeting...');
+            speak(getGreetingMessage());
+            setHasSpokenGreeting(true);
+          }, 500);
+        }
         console.log('Browser speech recognition started');
       };
       
@@ -114,13 +266,27 @@ export function VoiceMic({ rows, onAction }: Props) {
         setListening(false);
         setProcessingStep('idle');
         console.log('Browser speech recognition ended');
+        // Reset greeting flag after a delay to allow new sessions
+        setTimeout(() => setHasSpokenGreeting(false), 30000); // Reset after 30 seconds
       };
       
       recognition.onerror = (event: any) => {
         console.error('Browser speech recognition error:', event.error);
         setListening(false);
         setProcessingStep('error');
-        setTimeout(() => setProcessingStep('idle'), 3000);
+        
+        // Handle specific error types
+        if (event.error === 'not-allowed') {
+          alert('Microphone access denied. Please allow microphone access and try again.');
+        } else if (event.error === 'no-speech') {
+          console.log('No speech detected, trying again...');
+          setTimeout(() => setProcessingStep('idle'), 1000);
+        } else if (event.error === 'audio-capture') {
+          alert('No microphone found. Please check your microphone and try again.');
+        } else {
+          console.log('Speech recognition error, retrying...');
+          setTimeout(() => setProcessingStep('idle'), 2000);
+        }
       };
       
       recognition.start();
@@ -133,6 +299,11 @@ export function VoiceMic({ rows, onAction }: Props) {
   const processVoiceCommand = async (transcript: string) => {
     if (!transcript.trim()) return;
     
+    console.log('=== PROCESSING VOICE COMMAND ===');
+    console.log('Raw transcript:', transcript);
+    console.log('Transcript length:', transcript.length);
+    console.log('Has OpenAI API key:', !!import.meta.env.VITE_OPENAI_API_KEY);
+    
     setIsProcessing(true);
     setProcessingStep('interpreting');
     
@@ -142,32 +313,52 @@ export function VoiceMic({ rows, onAction }: Props) {
       let command: VoiceCommand;
       
       if (apiKey) {
+        console.log('Using OpenAI for command interpretation');
         // Use OpenAI for command interpretation
         command = await interpretVoiceCommandWithAI(transcript, rows);
+        if (!command || command.type === 'unknown') {
+          console.log('AI interpretation unknown, falling back to local interpretation');
+          command = interpretVoiceCommandLocal(transcript);
+        }
       } else {
+        console.log('Using local interpretation (no OpenAI API key)');
         // Use simple local interpretation as fallback
-        const intent = await interpretVoiceCommand(transcript);
-        command = convertVoiceCommandResultToVoiceCommand(intent);
+        command = interpretVoiceCommandLocal(transcript);
       }
       
+      console.log('Final interpreted command:', command);
       setLastCommand(command);
       setProcessingStep('executing');
       
-      // Execute the command directly
-      await onAction(command);
+      console.log('Executing voice command:', command);
+      console.log('Command type:', command.type);
+      console.log('Command details:', JSON.stringify(command, null, 2));
       
-      setProcessingStep('success');
+      // Execute the command and verify success
+      const succeeded = await Promise.resolve(onAction(command));
+      
+      if (succeeded) {
+        setProcessingStep('success');
+        // Speak confirmation message immediately
+        const confirmationMessage = getConfirmationMessage(command);
+        speak(confirmationMessage);
+      } else {
+        setProcessingStep('error');
+      }
+      
+      // Wait longer for user to respond after confirmation
       setTimeout(() => {
         setProcessingStep('idle');
         setLastCommand(null);
-      }, 2000);
+      }, 3000);
       
     } catch (error) {
       console.error('Voice command processing error:', error);
       setProcessingStep('error');
+      // Don't speak on errors, just show error state briefly
       setTimeout(() => {
         setProcessingStep('idle');
-      }, 3000);
+      }, 2000);
     } finally {
       setIsProcessing(false);
       setListening(false);
@@ -175,20 +366,151 @@ export function VoiceMic({ rows, onAction }: Props) {
     }
   };
 
-  const convertVoiceCommandResultToVoiceCommand = (intent: any): VoiceCommand => {
-    return {
-      type: intent.type === 'adjust' ? (intent.qty_inventory_delta > 0 ? 'add' : 'remove') : 
-            intent.type === 'order' ? 'order' : 
-            intent.type === 'giveaway' ? 'turn_in' : 
-            intent.type === 'set' ? 'set' : 
-            intent.type === 'delete' ? 'delete' : 'unknown',
-      player_name: intent.player_name,
-      edition: intent.edition,
-      size: intent.size,
-      quantity: Math.abs(intent.qty_inventory_delta || intent.order_quantity || intent.giveaway_quantity || 0),
-      target_quantity: intent.set_inventory_to,
-      recipient: intent.recipient,
+  const interpretVoiceCommandLocal = (transcript: string): VoiceCommand => {
+    const lowerTranscript = transcript.toLowerCase();
+    console.log('=== LOCAL VOICE INTERPRETATION ===');
+    console.log('Transcript:', transcript);
+    console.log('Lower transcript:', lowerTranscript);
+    
+    // Enhanced pattern matching for better recognition
+    const extractPlayerName = (text: string) => {
+      const playerPatterns = [
+        /(?:add|remove|set|delete|order)\s+([a-z]+(?:\s+[a-z]+)?)/i,
+        /([a-z]+(?:\s+[a-z]+)?)\s+(?:jersey|jerseys)/i,
+        /(?:for|to)\s+([a-z]+(?:\s+[a-z]+)?)/i
+      ];
+      
+      for (const pattern of playerPatterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+          const name = match[1].trim();
+          // Filter out common words that aren't player names
+          if (!['jersey', 'jerseys', 'size', 'edition', 'icon', 'statement', 'association', 'city', 'to', 'for', 'of', 'the'].includes(name.toLowerCase())) {
+            return name;
+          }
+        }
+      }
+      return '';
     };
+
+    const normalizeEdition = (s?: string) => {
+      if (!s) return s;
+      const singular = s.replace(/s\b/, ''); // tolerate plural 'statements'
+      const lowerSingular = singular.toLowerCase();
+      console.log('Normalizing edition:', s, '->', lowerSingular);
+      
+      // More flexible matching for all editions
+      if (/icon/.test(lowerSingular)) return 'Icon';
+      if (/statement/.test(lowerSingular)) return 'Statement';
+      if (/association/.test(lowerSingular)) return 'Association';
+      if (/city/.test(lowerSingular)) return 'City';
+      
+      console.log('No edition match found for:', lowerSingular);
+      return undefined;
+    };
+
+    // Check for delete commands: "delete 5 city jerseys", "delete jalen green icon"
+    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all')) {
+      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+      const qtyMatch = lowerTranscript.match(/(\d+)/);
+      const playerName = extractPlayerName(transcript);
+      
+      return {
+        type: 'delete',
+        player_name: playerName,
+        edition: normalizeEdition(editionMatch?.[1]),
+        size: sizeMatch?.[1],
+        quantity: parseInt(qtyMatch?.[1] || '1', 10),
+      };
+    }
+
+    // Check for add commands
+    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus')) {
+      const qtyMatch = lowerTranscript.match(/(\d+)/);
+      // More comprehensive regex for all editions
+      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+      const playerName = extractPlayerName(transcript);
+      
+      console.log('Add command detected:');
+      console.log('  Quantity match:', qtyMatch);
+      console.log('  Edition match:', editionMatch);
+      console.log('  Size match:', sizeMatch);
+      console.log('  Player name:', playerName);
+      
+      const command = {
+        type: 'add' as const,
+        player_name: playerName,
+        edition: normalizeEdition(editionMatch?.[1]),
+        size: sizeMatch?.[1],
+        quantity: parseInt(qtyMatch?.[1] || '1', 10),
+      };
+      
+      console.log('Generated command:', command);
+      return command;
+    }
+
+    // Check for remove commands
+    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus')) {
+      const qtyMatch = lowerTranscript.match(/(\d+)/);
+      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+      const playerName = extractPlayerName(transcript);
+      
+      return {
+        type: 'remove',
+        player_name: playerName,
+        edition: normalizeEdition(editionMatch?.[1]),
+        size: sizeMatch?.[1],
+        quantity: parseInt(qtyMatch?.[1] || '1', 10),
+      };
+    }
+
+    // Check for set commands
+    if (lowerTranscript.includes('set') && lowerTranscript.includes('to')) {
+      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+      const toMatch = lowerTranscript.match(/\bto\s+(\d+)/i);
+      const playerName = extractPlayerName(transcript);
+      
+      return {
+        type: 'set',
+        player_name: playerName,
+        edition: normalizeEdition(editionMatch?.[1]),
+        size: sizeMatch?.[1],
+        target_quantity: parseInt(toMatch?.[1] || '0', 10),
+      };
+    }
+
+    // Check for order commands
+    if (lowerTranscript.includes('order') || lowerTranscript.includes('reorder') || lowerTranscript.includes('buy')) {
+      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+      const qtyMatch = lowerTranscript.match(/(\d+)/);
+      const playerName = extractPlayerName(transcript);
+      
+      return {
+        type: 'order',
+        player_name: playerName,
+        edition: normalizeEdition(editionMatch?.[1]),
+        size: sizeMatch?.[1],
+        quantity: parseInt(qtyMatch?.[1] || '1', 10),
+      };
+    }
+
+    console.log('No command pattern matched, returning unknown');
+    console.log('Final transcript analysis:', {
+      lowerTranscript,
+      hasAdd: lowerTranscript.includes('add'),
+      hasPlus: lowerTranscript.includes('plus'),
+      hasRemove: lowerTranscript.includes('remove'),
+      hasDelete: lowerTranscript.includes('delete'),
+      hasSet: lowerTranscript.includes('set'),
+      hasOrder: lowerTranscript.includes('order'),
+      hasTurnIn: lowerTranscript.includes('turn in') || lowerTranscript.includes('turnin'),
+    });
+    return { type: 'unknown' };
   };
 
   const startListening = async () => {
@@ -204,6 +526,16 @@ export function VoiceMic({ rows, onAction }: Props) {
       startBrowserSpeechRecognition();
       return;
     }
+    
+    // If we already have an API error, use browser speech recognition
+    if (apiError) {
+      console.log('API error detected, using browser speech recognition');
+      startBrowserSpeechRecognition();
+      return;
+    }
+    
+    // Reset any previous errors when starting fresh
+    setApiError(null);
     
     // Try OpenAI Whisper with MediaRecorder first
     if (typeof MediaRecorder !== 'undefined') {
@@ -253,11 +585,13 @@ export function VoiceMic({ rows, onAction }: Props) {
                 // Clean up the current stream first
                 stream.getTracks().forEach(track => track.stop());
                 setListening(false);
+                setProcessingStep('idle');
                 
-                // Try fallback to browser speech recognition
+                // Automatically fallback to browser speech recognition so user doesn't have to click again
                 setTimeout(() => {
+                  console.log('Auto-starting browser speech recognition after credit error...');
                   startBrowserSpeechRecognition();
-                }, 1000); // Small delay to ensure cleanup
+                }, 300);
                 return; // Exit early to avoid the setTimeout below
               }
             }
@@ -274,6 +608,14 @@ export function VoiceMic({ rows, onAction }: Props) {
         setListening(true);
         setProcessingStep('recording');
         playBeep();
+        // Only speak greeting once per session
+        if (!hasSpokenGreeting) {
+          setTimeout(() => {
+            console.log('Speaking greeting...');
+            speak(getGreetingMessage());
+            setHasSpokenGreeting(true);
+          }, 500);
+        }
         console.log('Recording started successfully');
         
       } catch (error) {
@@ -291,57 +633,11 @@ export function VoiceMic({ rows, onAction }: Props) {
           }
         }
       }
-    } else {
-      // Fallback to browser speech recognition
-      console.log('MediaRecorder not available, trying browser speech recognition...');
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.lang = 'en-US';
-          recognition.interimResults = true;
-          recognition.continuous = false;
-          
-          recognition.onstart = () => {
-            setListening(true);
-            setProcessingStep('recording');
-            playBeep();
-            console.log('Browser speech recognition started');
-          };
-          
-          recognition.onresult = async (event: any) => {
-            const transcript = event.results[0][0].transcript;
-            console.log('Browser transcript:', transcript);
-            setTranscript(transcript);
-            
-            if (event.results[0].isFinal) {
-              await processVoiceCommand(transcript);
-            }
-          };
-          
-          recognition.onend = () => {
-            setListening(false);
-            setProcessingStep('idle');
-          };
-          
-          recognition.onerror = (event: any) => {
-            console.error('Speech recognition error:', event.error);
-            setListening(false);
-            setProcessingStep('error');
-            setTimeout(() => setProcessingStep('idle'), 3000);
-          };
-          
-          recognition.start();
-        } catch (error) {
-          console.error('Failed to start browser speech recognition:', error);
-          setProcessingStep('error');
-        }
       } else {
-        console.error('No voice recording support available');
-        setProcessingStep('error');
+        // Fallback to browser speech recognition
+        console.log('MediaRecorder not available, trying browser speech recognition...');
+        startBrowserSpeechRecognition();
       }
-    }
   };
 
   const stopListening = () => {
@@ -374,17 +670,27 @@ export function VoiceMic({ rows, onAction }: Props) {
   const getStatusIcon = () => {
     switch (processingStep) {
       case 'recording':
-        return <Mic className="h-4 w-4 animate-pulse" />;
+        return (
+          <div className="relative">
+            <Mic className="h-4 w-4 animate-pulse text-red-500" />
+            <div className="absolute -inset-1 bg-red-100 rounded-full animate-ping opacity-75"></div>
+          </div>
+        );
       case 'transcribing':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
       case 'interpreting':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-purple-500" />;
       case 'executing':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-orange-500" />;
       case 'success':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return (
+          <div className="relative">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <div className="absolute -inset-1 bg-green-100 rounded-full animate-ping opacity-75"></div>
+          </div>
+        );
       case 'error':
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return <XCircle className="h-4 w-4 text-red-500 animate-bounce" />;
       default:
         return <Mic className="h-4 w-4" />;
     }
@@ -411,25 +717,22 @@ export function VoiceMic({ rows, onAction }: Props) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-2">
-        <button
-          className={`btn btn-sm ${
-            listening 
-              ? 'btn-error' 
-              : isProcessing 
-              ? 'btn-warning' 
-              : 'btn-secondary'
-          }`}
-          onClick={listening ? stopListening : startListening}
-          disabled={isProcessing}
-        >
-          {getStatusIcon()}
-          <span className="hidden sm:inline">
-            {getStatusText()}
-          </span>
-        </button>
-        
-      </div>
+      <button
+        className={`btn btn-sm ${
+          listening 
+            ? 'btn-error' 
+            : isProcessing 
+            ? 'btn-warning' 
+            : 'btn-secondary'
+        }`}
+        onClick={listening ? stopListening : startListening}
+        disabled={isProcessing}
+      >
+        {getStatusIcon()}
+        <span className="hidden sm:inline">
+          {getStatusText()}
+        </span>
+      </button>
       
       {transcript && (
         <div className="text-sm text-blue-600 max-w-64 truncate bg-blue-50 px-2 py-1 rounded">

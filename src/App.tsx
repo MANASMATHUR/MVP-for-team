@@ -5,14 +5,16 @@ import { InventoryTable } from './features/inventory/InventoryTable';
 import { SettingsPanel } from './features/settings/SettingsPanel';
 import { LogsPanel } from './features/logs/LogsPanel';
 import { Dashboard } from './features/dashboard/Dashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabaseClient';
-import { Bell, Settings, Package, BarChart3, LogOut, User } from 'lucide-react';
+import { Bell, Settings, Package, BarChart3, LogOut, User, Wifi, WifiOff } from 'lucide-react';
 
 function App() {
   const [tab, setTab] = useState<'dashboard' | 'inventory' | 'settings' | 'logs'>('dashboard');
   const [userEmail, setUserEmail] = useState<string>('');
   const [notifications, setNotifications] = useState<number>(0);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     (async () => {
@@ -27,6 +29,18 @@ function App() {
       
       setNotifications(lowStockItems?.length || 0);
     })();
+
+    // Monitor online/offline status
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const tabs = [
@@ -77,6 +91,17 @@ function App() {
 
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
+                  {isOnline ? (
+                    <div title="Online">
+                      <Wifi className="h-4 w-4 text-green-500" />
+                    </div>
+                  ) : (
+                    <div title="Offline">
+                      <WifiOff className="h-4 w-4 text-red-500" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   <User className="h-4 w-4" />
                   <span className="hidden sm:block">{userEmail}</span>
                 </div>
@@ -98,10 +123,12 @@ function App() {
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="fade-in">
-            {tab === 'dashboard' && <Dashboard />}
-            {tab === 'inventory' && <InventoryTable />}
-            {tab === 'settings' && <SettingsPanel />}
-            {tab === 'logs' && <LogsPanel />}
+            <ErrorBoundary>
+              {tab === 'dashboard' && <Dashboard />}
+              {tab === 'inventory' && <InventoryTable />}
+              {tab === 'settings' && <SettingsPanel />}
+              {tab === 'logs' && <LogsPanel />}
+            </ErrorBoundary>
           </div>
         </main>
       </div>

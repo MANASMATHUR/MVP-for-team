@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { Package, AlertTriangle, TrendingUp, Phone, Clock, CheckCircle } from 'lucide-react';
+import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap } from 'lucide-react';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface DashboardStats {
@@ -8,6 +8,10 @@ interface DashboardStats {
   lowStockItems: number;
   totalValue: number;
   recentActivity: number;
+  totalPlayers: number;
+  avgStockPerPlayer: number;
+  mostPopularEdition: string;
+  efficiencyScore: number;
 }
 
 interface EditionData {
@@ -32,6 +36,10 @@ export function Dashboard() {
     lowStockItems: 0,
     totalValue: 0,
     recentActivity: 0,
+    totalPlayers: 0,
+    avgStockPerPlayer: 0,
+    mostPopularEdition: '',
+    efficiencyScore: 0,
   });
   const [editionData, setEditionData] = useState<EditionData[]>([]);
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
@@ -55,18 +63,36 @@ export function Dashboard() {
         const lowStockItems = jerseys.filter(j => j.qty_inventory <= 1).length;
         const totalValue = jerseys.reduce((sum, j) => sum + (j.qty_inventory * 75), 0); // Assuming $75 per jersey
         
+        // Calculate additional stats
+        const uniquePlayers = new Set(jerseys.map(j => j.player_name)).size;
+        const avgStockPerPlayer = totalJerseys / uniquePlayers;
+        
+        // Find most popular edition
+        const editionCounts = jerseys.reduce((acc: Record<string, number>, jersey: any) => {
+          acc[jersey.edition] = (acc[jersey.edition] || 0) + 1;
+          return acc;
+        }, {});
+        const mostPopularEdition = Object.entries(editionCounts).reduce((a, b) => 
+          editionCounts[a[0]] > editionCounts[b[0]] ? a : b
+        )[0];
+        
+        // Calculate efficiency score (0-100)
+        const efficiencyScore = Math.round(
+          Math.max(0, 100 - (lowStockItems / totalJerseys) * 100)
+        );
+        
         setStats({
           totalJerseys,
           lowStockItems,
           totalValue,
           recentActivity: 0, // Will be updated with activity logs
+          totalPlayers: uniquePlayers,
+          avgStockPerPlayer: Math.round(avgStockPerPlayer * 10) / 10,
+          mostPopularEdition,
+          efficiencyScore,
         });
 
-        // Calculate edition distribution
-        const editionCounts: Record<string, number> = jerseys.reduce((acc: Record<string, number>, jersey: any) => {
-          acc[jersey.edition] = (acc[jersey.edition] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>);
+        // Calculate edition distribution (reuse the counts we already calculated)
 
         const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
         const editionData = Object.entries(editionCounts).map(([edition, count], index) => ({
@@ -78,37 +104,8 @@ export function Dashboard() {
         setEditionData(editionData);
       }
 
-      // Load recent calls (mock data for now)
-      const mockCalls: RecentCall[] = [
-        {
-          id: '1',
-          player_name: 'Jalen Green',
-          edition: 'Icon',
-          size: '48',
-          status: 'completed',
-          created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          duration: 180,
-        },
-        {
-          id: '2',
-          player_name: 'Alperen Sengun',
-          edition: 'Statement',
-          size: '52',
-          status: 'pending',
-          created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '3',
-          player_name: 'Fred VanVleet',
-          edition: 'City',
-          size: '50',
-          status: 'completed',
-          created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-          duration: 240,
-        },
-      ];
-
-      setRecentCalls(mockCalls);
+      // Remove mock recent calls for enterprise build
+      setRecentCalls([]);
 
       // Load recent activity
       const { data: activityLogs } = await supabase
@@ -152,9 +149,15 @@ export function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="loading"></div>
-        <span className="ml-2 text-gray-600">Loading dashboard...</span>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <div className="relative">
+          <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-t-blue-400 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '0.8s'}}></div>
+        </div>
+        <div className="text-center">
+          <p className="text-lg font-semibold text-gray-700">Loading Dashboard</p>
+          <p className="text-sm text-gray-500">Analyzing inventory data...</p>
+        </div>
       </div>
     );
   }
@@ -199,11 +202,36 @@ export function Dashboard() {
           subtitle="Estimated total value"
         />
         <StatCard
-          title="Recent Activity"
-          value={stats.recentActivity}
-          icon={Clock}
+          title="Efficiency Score"
+          value={`${stats.efficiencyScore}%`}
+          icon={Zap}
           color="bg-purple-500"
-          subtitle="Last 24 hours"
+          subtitle="Stock optimization"
+        />
+      </div>
+
+      {/* Additional Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard
+          title="Active Players"
+          value={stats.totalPlayers}
+          icon={Users}
+          color="bg-indigo-500"
+          subtitle="Unique players tracked"
+        />
+        <StatCard
+          title="Avg Stock/Player"
+          value={stats.avgStockPerPlayer}
+          icon={Activity}
+          color="bg-cyan-500"
+          subtitle="Average inventory per player"
+        />
+        <StatCard
+          title="Popular Edition"
+          value={stats.mostPopularEdition}
+          icon={CheckCircle}
+          color="bg-emerald-500"
+          subtitle="Most stocked edition"
         />
       </div>
 
@@ -233,42 +261,7 @@ export function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        {/* Recent Calls */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Order Calls</h3>
-          <div className="space-y-3">
-            {recentCalls.map((call) => (
-              <div key={call.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-full ${
-                    call.status === 'completed' ? 'bg-green-100' :
-                    call.status === 'pending' ? 'bg-yellow-100' : 'bg-red-100'
-                  }`}>
-                    <Phone className={`h-4 w-4 ${
-                      call.status === 'completed' ? 'text-green-600' :
-                      call.status === 'pending' ? 'text-yellow-600' : 'text-red-600'
-                    }`} />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">{call.player_name}</p>
-                    <p className="text-sm text-gray-600">{call.edition} - Size {call.size}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className={`text-xs px-2 py-1 rounded-full ${
-                    call.status === 'completed' ? 'bg-green-100 text-green-800' :
-                    call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {call.status}
-                  </div>
-                  {call.duration && (
-                    <p className="text-xs text-gray-500 mt-1">{Math.floor(call.duration / 60)}m {call.duration % 60}s</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Recent Calls removed for enterprise build */}
       </div>
 
       {/* Quick Actions */}
@@ -283,7 +276,40 @@ export function Dashboard() {
             <Package className="h-4 w-4" />
             Add New Jersey
           </button>
-          <button className="btn btn-secondary">
+          <button
+            className="btn btn-secondary"
+            onClick={async () => {
+              try {
+                // Local report generation without external APIs
+                const { data: jerseys } = await supabase.from('jerseys').select('*');
+                const total = jerseys?.length || 0;
+                const low = jerseys?.filter((j: any) => j.qty_inventory <= 1).length || 0;
+                const value = jerseys?.reduce((sum: number, j: any) => sum + (j.qty_inventory * 75), 0) || 0;
+                const editions = (jerseys || []).reduce((acc: Record<string, number>, j: any) => { acc[j.edition] = (acc[j.edition] || 0) + 1; return acc; }, {});
+                const lines = [
+                  '# Monthly Inventory Report',
+                  '',
+                  '## Summary',
+                  `- Total jerseys in inventory: ${total}`,
+                  `- Low stock items: ${low}`,
+                  `- Total inventory value: $${value.toLocaleString()}`,
+                  '',
+                  '## Edition Breakdown',
+                  ...Object.entries(editions).map(([ed, count]) => `- ${ed}: ${count}`),
+                  '',
+                  '## Recommendations',
+                  '- Review low stock items and place reorders',
+                  '- Analyze usage patterns to optimize stock levels',
+                  '- Consider seasonal variations in demand',
+                ].join('\n');
+                await navigator.clipboard.writeText(lines);
+                alert('Inventory report copied to clipboard');
+              } catch (e) {
+                console.error('Report generation error:', e);
+                alert('Failed to generate report');
+              }
+            }}
+          >
             <CheckCircle className="h-4 w-4" />
             Generate Report
           </button>
