@@ -132,6 +132,68 @@ export function VoiceMic({ rows, onAction }: Props) {
     }
   };
 
+  const isGeneralChat = (transcript: string): boolean => {
+    const lowerTranscript = transcript.toLowerCase();
+    
+    // Check for general conversation patterns
+    const generalPatterns = [
+      /^(hello|hi|hey|good morning|good afternoon|good evening)/i,
+      /^(how are you|what's up|how's it going)/i,
+      /^(thank you|thanks|appreciate it)/i,
+      /^(goodbye|bye|see you later)/i,
+      /^(what time|what's the time)/i,
+      /^(what's the weather|how's the weather)/i,
+      /^(tell me about|explain|what is)/i,
+      /^(joke|funny|laugh)/i,
+      /^(help|assist|support)/i,
+      /^(yes|no|okay|ok|sure|alright)/i
+    ];
+    
+    return generalPatterns.some(pattern => pattern.test(lowerTranscript));
+  };
+
+  const handleGeneralConversation = async (transcript: string): Promise<string> => {
+    const lowerTranscript = transcript.toLowerCase();
+    
+    // Simple conversation responses
+    if (lowerTranscript.includes('hello') || lowerTranscript.includes('hi') || lowerTranscript.includes('hey')) {
+      return "Hello! I'm your inventory assistant. How can I help you manage your jerseys today?";
+    }
+    
+    if (lowerTranscript.includes('how are you') || lowerTranscript.includes('what\'s up')) {
+      return "I'm doing great! Ready to help you with inventory management. What would you like to do?";
+    }
+    
+    if (lowerTranscript.includes('thank you') || lowerTranscript.includes('thanks')) {
+      return "You're welcome! I'm here to help with your inventory. Anything else you need?";
+    }
+    
+    if (lowerTranscript.includes('goodbye') || lowerTranscript.includes('bye')) {
+      return "Goodbye! Feel free to come back anytime for inventory management.";
+    }
+    
+    if (lowerTranscript.includes('help') || lowerTranscript.includes('assist')) {
+      return "I can help you with inventory commands like: Add jerseys, Delete jerseys, Remove jerseys, Set quantities, and Order jerseys. Just tell me what you'd like to do!";
+    }
+    
+    if (lowerTranscript.includes('what time')) {
+      const now = new Date();
+      return `The current time is ${now.toLocaleTimeString()}.`;
+    }
+    
+    if (lowerTranscript.includes('joke') || lowerTranscript.includes('funny')) {
+      const jokes = [
+        "Why don't jerseys ever get cold? Because they're always in the closet!",
+        "What do you call a jersey that's been to space? An astronaut jersey!",
+        "Why did the jersey go to therapy? It had too many issues!"
+      ];
+      return jokes[Math.floor(Math.random() * jokes.length)];
+    }
+    
+    // Default response for general conversation
+    return "I'm your inventory assistant. I can help you manage jerseys with commands like 'Add 5 jerseys', 'Delete 3 city jerseys', or 'Set jerseys to 10'. What would you like to do?";
+  };
+
   useEffect(() => {
     const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
     const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
@@ -276,6 +338,22 @@ export function VoiceMic({ rows, onAction }: Props) {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
       let command: VoiceCommand;
       
+      // Check if it's a general conversation first
+      const isGeneralConversation = isGeneralChat(transcript);
+      
+      if (isGeneralConversation) {
+        // Handle general conversation
+        setProcessingStep('executing');
+        const response = await handleGeneralConversation(transcript);
+        speak(response);
+        setProcessingStep('success');
+        setTimeout(() => {
+          setProcessingStep('idle');
+        }, 2000);
+        return;
+      }
+      
+      // Handle inventory commands
       if (apiKey) {
         command = await interpretVoiceCommandWithAI(transcript, rows);
         if (!command || command.type === 'unknown') {
