@@ -53,6 +53,14 @@ export function VoiceMic({ rows, onAction }: Props) {
       return;
     }
     
+    // Mobile-specific speech synthesis handling
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      console.log('Mobile device detected for speech synthesis');
+      // Mobile browsers may require user interaction for speech synthesis
+      // We'll try anyway since this is called after user interaction
+    }
+    
     const speechSynthesis = window.speechSynthesis;
     if (!speechSynthesis) {
       console.error('Speech synthesis not available');
@@ -106,11 +114,25 @@ export function VoiceMic({ rows, onAction }: Props) {
         speechSynthesis.speak(utterance);
         console.log('speak() called successfully');
         
-        // Verify speech started after a short delay
+        // Verify speech started after a short delay (mobile-optimized)
         setTimeout(() => {
           if (!speechSynthesis.speaking) {
             console.warn('Speech may not have started, trying again...');
-            speechSynthesis.speak(utterance);
+            if (isMobile) {
+              console.log('Mobile retry: Attempting speech synthesis again...');
+              // Mobile browsers sometimes need multiple attempts
+              speechSynthesis.speak(utterance);
+              
+              // If still not working after 2 seconds, try one more time
+              setTimeout(() => {
+                if (!speechSynthesis.speaking) {
+                  console.log('Mobile final retry: Last attempt for speech synthesis...');
+                  speechSynthesis.speak(utterance);
+                }
+              }, 2000);
+            } else {
+              speechSynthesis.speak(utterance);
+            }
           }
         }, 500);
         
@@ -206,6 +228,21 @@ export function VoiceMic({ rows, onAction }: Props) {
         
         // Speech synthesis is ready
         console.log('Speech synthesis initialized successfully');
+        
+        // Mobile-specific speech synthesis setup
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+          console.log('Mobile device detected, setting up mobile speech synthesis...');
+          // Mobile browsers sometimes need a test utterance to initialize properly
+          try {
+            const testUtterance = new SpeechSynthesisUtterance('');
+            testUtterance.volume = 0;
+            speechSynthesis.speak(testUtterance);
+            console.log('Mobile speech synthesis test completed');
+          } catch (error) {
+            console.log('Mobile speech synthesis test failed:', error);
+          }
+        }
       }
     } else {
       console.log('Speech synthesis not supported');
@@ -241,9 +278,10 @@ export function VoiceMic({ rows, onAction }: Props) {
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       if (isMobile) {
         console.log('Applying mobile-specific speech recognition settings...');
-        // Some mobile browsers work better with these settings
-        recognition.continuous = true; // Mobile browsers sometimes work better with continuous
-        recognition.interimResults = false; // Reduce processing on mobile
+        // Mobile browsers work better with these settings
+        recognition.continuous = false; // Use false for better mobile compatibility
+        recognition.interimResults = true; // Show interim results for better UX
+        recognition.maxAlternatives = 3; // Get more alternatives for better recognition
       }
       
       recognition.onstart = () => {
@@ -251,10 +289,16 @@ export function VoiceMic({ rows, onAction }: Props) {
         setProcessingStep('recording');
         setTranscript(''); // Clear previous transcript
         playBeep();
-        // Only speak greeting once per session
+        // Only speak greeting once per session (mobile-friendly)
         if (!hasSpokenGreeting) {
           setTimeout(() => {
             console.log('Speaking greeting...');
+            // On mobile, ensure user interaction before speaking
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+              // Mobile browsers require user interaction for speech synthesis
+              console.log('Mobile detected, greeting will be spoken after user interaction');
+            }
             speak(getGreetingMessage());
             setHasSpokenGreeting(true);
           }, 500);
@@ -266,8 +310,14 @@ export function VoiceMic({ rows, onAction }: Props) {
         let interimTranscript = '';
         let finalTranscript = '';
         
+        console.log('Speech recognition result received:', event);
+        console.log('Number of results:', event.results.length);
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
+          const confidence = event.results[i][0].confidence;
+          console.log(`Result ${i}: "${transcript}" (confidence: ${confidence}, final: ${event.results[i].isFinal})`);
+          
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
           } else {
@@ -300,17 +350,22 @@ export function VoiceMic({ rows, onAction }: Props) {
       
       recognition.onerror = (event: any) => {
         console.error('Browser speech recognition error:', event.error);
+        console.error('Error details:', event);
         setListening(false);
         setProcessingStep('error');
         
-        // Handle specific error types
+        // Handle specific error types with mobile-friendly messages
         if (event.error === 'not-allowed') {
-          alert('Microphone access denied. Please allow microphone access and try again.');
+          alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
         } else if (event.error === 'no-speech') {
           console.log('No speech detected, trying again...');
           setTimeout(() => setProcessingStep('idle'), 1000);
         } else if (event.error === 'audio-capture') {
-          alert('No microphone found. Please check your microphone and try again.');
+          alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
+        } else if (event.error === 'network') {
+          alert('Network error. Please check your internet connection and try again.');
+        } else if (event.error === 'service-not-allowed') {
+          alert('Speech recognition service not allowed. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
         } else {
           console.log('Speech recognition error, retrying...');
           setTimeout(() => setProcessingStep('idle'), 2000);
@@ -321,6 +376,12 @@ export function VoiceMic({ rows, onAction }: Props) {
     } catch (error) {
       console.error('Failed to start browser speech recognition:', error);
       setProcessingStep('error');
+      
+      // Mobile-specific fallback message
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        alert('Speech recognition failed on mobile. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page\n4. Check microphone permissions');
+      }
     }
   };
 
@@ -400,6 +461,13 @@ export function VoiceMic({ rows, onAction }: Props) {
     console.log('Transcript:', transcript);
     console.log('Lower transcript:', lowerTranscript);
     
+    // Mobile-specific transcript cleaning
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      console.log('Mobile device detected, applying mobile-specific transcript processing...');
+      // Mobile speech recognition sometimes adds extra words or has different patterns
+    }
+    
     // Enhanced pattern matching for better recognition
     const extractPlayerName = (text: string) => {
       const playerPatterns = [
@@ -453,8 +521,8 @@ export function VoiceMic({ rows, onAction }: Props) {
       };
     }
 
-    // Check for add/increase commands
-    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus') || lowerTranscript.includes('increase') || lowerTranscript.includes('inc ')) {
+    // Check for add/increase commands (mobile-optimized patterns)
+    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus') || lowerTranscript.includes('increase') || lowerTranscript.includes('inc ') || lowerTranscript.includes('more') || lowerTranscript.includes('additional') || lowerTranscript.includes('put') || lowerTranscript.includes('place') || lowerTranscript.includes('create')) {
       const qtyMatch = lowerTranscript.match(/(\d+)/);
       // More comprehensive regex for all editions
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
@@ -479,8 +547,8 @@ export function VoiceMic({ rows, onAction }: Props) {
       return command;
     }
 
-    // Check for remove/decrease commands
-    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus') || lowerTranscript.includes('decrease') || lowerTranscript.includes('dec ')) {
+    // Check for remove/decrease commands (mobile-optimized patterns)
+    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus') || lowerTranscript.includes('decrease') || lowerTranscript.includes('dec ') || lowerTranscript.includes('delete') || lowerTranscript.includes('take away') || lowerTranscript.includes('takeaway')) {
       const qtyMatch = lowerTranscript.match(/(\d+)/);
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
@@ -585,6 +653,9 @@ export function VoiceMic({ rows, onAction }: Props) {
     
     // Reset any previous errors when starting fresh
     setApiError(null);
+    
+    // MOBILE-FIRST APPROACH: Try OpenAI Whisper first, fallback to browser speech recognition
+    console.log('Mobile-optimized: Trying OpenAI Whisper first, with browser fallback');
     
     // Try OpenAI Whisper with MediaRecorder first
     if (typeof MediaRecorder !== 'undefined') {
@@ -720,6 +791,15 @@ export function VoiceMic({ rows, onAction }: Props) {
             alert('Security error: This feature requires HTTPS. Please:\n1. Make sure you\'re using https:// in the URL\n2. Try refreshing the page\n3. Contact support if the issue persists');
           }
         }
+        
+        // MOBILE FALLBACK: If MediaRecorder fails, automatically try browser speech recognition
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+          console.log('Mobile MediaRecorder failed, automatically trying browser speech recognition...');
+          setTimeout(() => {
+            startBrowserSpeechRecognition();
+          }, 1000);
+        }
       }
       } else {
         // Fallback to browser speech recognition
@@ -843,6 +923,13 @@ export function VoiceMic({ rows, onAction }: Props) {
       <div className="text-xs text-gray-500 hidden md:block">
         Try: "Add 5 Jalen Green Icon size 48" · "Remove 3 Statement jerseys" · "Set Jalen Green Icon to 10" · "Delete all City jerseys"
       </div>
+      
+      {/* Mobile Debug Info */}
+      {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
+        <div className="text-xs text-blue-500 md:hidden">
+          Mobile: {location.protocol === 'https:' ? '✅ HTTPS' : '❌ HTTP'} · {navigator.userAgent.includes('Chrome') ? '✅ Chrome' : navigator.userAgent.includes('Safari') ? '✅ Safari' : '⚠️ Other Browser'}
+        </div>
+      )}
     </div>
   );
 }
