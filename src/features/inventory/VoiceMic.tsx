@@ -134,7 +134,6 @@ export function VoiceMic({ rows, onAction }: Props) {
 
   useEffect(() => {
     const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
-    const hasGetUserMedia = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
     const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
     const hasSpeechSynthesis = typeof speechSynthesis !== 'undefined';
     
