@@ -593,8 +593,6 @@ export function VoiceMic({ rows, onAction }: Props) {
   const startListening = async () => {
     if (listening) return;
     
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
     // Do not auto-greet on click; greet only once per session when recognition starts
     
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
@@ -807,7 +805,7 @@ export function VoiceMic({ rows, onAction }: Props) {
         }`}
         onClick={listening ? stopListening : startListening}
         disabled={isProcessing}
-        onTouchStart={(e) => {
+        onTouchStart={() => {
           // Long-press to start on mobile (prevents accidental taps)
           if (touchTimeoutRef.current) window.clearTimeout(touchTimeoutRef.current);
           touchTimeoutRef.current = window.setTimeout(() => {
