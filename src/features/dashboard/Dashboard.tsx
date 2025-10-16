@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap } from 'lucide-react';
+import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap, Sparkles } from 'lucide-react';
+import { analyzeInventory, buildReorderEmailDraft, buildReorderEmailDraftAI } from '../../integrations/openai';
+import toast from 'react-hot-toast';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface DashboardStats {
@@ -35,6 +37,13 @@ export function Dashboard() {
   });
   const [editionData, setEditionData] = useState<EditionData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiInsights, setAiInsights] = useState<{
+    riskAssessment: string;
+    recommendations: string[];
+    suggestedActions: string[];
+  } | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -113,6 +122,23 @@ export function Dashboard() {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAiInsights = async () => {
+    try {
+      setAiLoading(true);
+      setAiError(null);
+      const analysis = await analyzeInventory();
+      setAiInsights({
+        riskAssessment: analysis.riskAssessment,
+        recommendations: analysis.recommendations.slice(0, 4),
+        suggestedActions: analysis.suggestedActions.slice(0, 4),
+      });
+    } catch (e: any) {
+      setAiError('AI insights unavailable right now');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -251,18 +277,123 @@ export function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        {/* Recent Calls removed for enterprise build */}
+        {/* Recommendations Panel */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-600" /> Recommendations
+            </h3>
+            <button className="btn btn-secondary btn-sm" onClick={loadAiInsights} disabled={aiLoading}>
+              {aiLoading ? 'Analyzing...' : 'Refresh'}
+            </button>
+          </div>
+          {aiError && (
+            <div className="text-sm text-red-600 mb-2">{aiError}</div>
+          )}
+          {aiInsights ? (
+            <div className="space-y-4">
+              <div>
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Risk Assessment</div>
+                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  {aiInsights.riskAssessment}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Recommendations</div>
+                <ul className="list-disc pl-5 space-y-1 text-sm text-gray-800">
+                  {aiInsights.recommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Suggested Actions</div>
+                <ul className="list-disc pl-5 space-y-1 text-sm text-gray-800">
+                  {aiInsights.suggestedActions.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-600">Click "Refresh" to analyze your latest inventory.</div>
+          )}
+        </div>
       </div>
 
       {/* Quick Actions */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="btn btn-primary">
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              try {
+                toast.loading('Preparing reorder email...', { id: 'qa-reorder' });
+                const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
+                const threshold = settings?.low_stock_threshold ?? 1;
+                const { data: jerseys } = await supabase.from('jerseys').select('*');
+                const lowStock = (jerseys || []).filter((j: any) => j.qty_inventory <= threshold);
+                if (lowStock.length === 0) {
+                  toast.success('No low stock items to reorder', { id: 'qa-reorder' });
+                  return;
+                }
+                const plainBlocks = lowStock.map((item: any) => buildReorderEmailDraft({
+                  player_name: item.player_name,
+                  edition: item.edition,
+                  size: item.size,
+                  qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
+                })).join('\n\n---\n\n');
+                const polished = await buildReorderEmailDraftAI(plainBlocks);
+                const subjectMatch = polished.match(/^Subject:\s*(.*)$/m);
+                const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
+                const body = polished.replace(/^Subject:.*\n?/, '');
+                const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                window.location.href = mailto;
+                toast.success(`Reorder email opened (${lowStock.length} item${lowStock.length === 1 ? '' : 's'})`, { id: 'qa-reorder' });
+              } catch (e) {
+                console.error('Quick action reorder error:', e);
+                toast.error('Failed to create reorder email', { id: 'qa-reorder' });
+              }
+            }}
+            title="Compose reorder email for low stock"
+          >
             <Phone className="h-4 w-4" />
-            Place Order Call
+            Reorder Email
           </button>
-          <button className="btn btn-secondary">
+          <button
+            className="btn btn-secondary"
+            onClick={async () => {
+              try {
+                const player = window.prompt('Player name?');
+                if (!player) return;
+                const edition = window.prompt('Edition (Icon/Statement/Association/City)?', 'Icon') || 'Icon';
+                const size = window.prompt('Size?', '48') || '48';
+                const inv = parseInt(window.prompt('Inventory qty?', '0') || '0', 10) || 0;
+                const lva = parseInt(window.prompt('Due to LVA qty?', '0') || '0', 10) || 0;
+                const { data: userRes } = await supabase.auth.getUser();
+                const updatedBy = userRes.user?.email ?? null;
+                const { error } = await supabase
+                  .from('jerseys')
+                  .insert({
+                    player_name: player.trim(),
+                    edition: edition as any,
+                    size: size.trim(),
+                    qty_inventory: Math.max(0, inv),
+                    qty_due_lva: Math.max(0, lva),
+                    updated_by: updatedBy,
+                    updated_at: new Date().toISOString(),
+                  });
+                if (error) throw new Error(error.message);
+                toast.success('Jersey added');
+                loadDashboardData();
+              } catch (e: any) {
+                console.error('Quick add error:', e);
+                toast.error(e?.message || 'Failed to add jersey');
+              }
+            }}
+            title="Quick add a jersey"
+          >
             <Package className="h-4 w-4" />
             Add New Jersey
           </button>
@@ -270,12 +401,12 @@ export function Dashboard() {
             className="btn btn-secondary"
             onClick={async () => {
               try {
-                // Local report generation without external APIs
+                toast.loading('Generating report...', { id: 'qa-report' });
                 const { data: jerseys } = await supabase.from('jerseys').select('*');
                 const total = jerseys?.length || 0;
                 const low = jerseys?.filter((j: any) => j.qty_inventory <= 1).length || 0;
                 const value = jerseys?.reduce((sum: number, j: any) => sum + (j.qty_inventory * 75), 0) || 0;
-                const editions = (jerseys || []).reduce((acc: Record<string, number>, j: any) => { acc[j.edition] = (acc[j.edition] || 0) + 1; return acc; }, {});
+                const editions = (jerseys || []).reduce((acc: Record<string, number>, j: any) => { acc[j.edition] = (acc[j.edition] || 0) + 1; return acc; }, {} as Record<string, number>);
                 const lines = [
                   '# Monthly Inventory Report',
                   '',
@@ -293,15 +424,16 @@ export function Dashboard() {
                   '- Consider seasonal variations in demand',
                 ].join('\n');
                 await navigator.clipboard.writeText(lines);
-                alert('Inventory report copied to clipboard');
+                toast.success('Report copied to clipboard', { id: 'qa-report' });
               } catch (e) {
-                console.error('Report generation error:', e);
-                alert('Failed to generate report');
+                console.error('Quick report error:', e);
+                toast.error('Failed to generate report', { id: 'qa-report' });
               }
             }}
+            title="Copy monthly report to clipboard"
           >
             <CheckCircle className="h-4 w-4" />
-            Generate Report
+            Copy Report
           </button>
         </div>
       </div>

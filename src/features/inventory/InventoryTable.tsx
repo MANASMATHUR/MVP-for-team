@@ -114,13 +114,22 @@ export function InventoryTable() {
   };
 
   const updateField = async (row: Row, fields: Partial<Row>) => {
-    const updated = { ...row, ...fields } as Row;
+    // Clamp numeric fields to safe values before optimistic update
+    const safeFields: Partial<Row> = { ...fields };
+    if (typeof safeFields.qty_inventory === 'number') {
+      safeFields.qty_inventory = Math.max(0, Math.floor(safeFields.qty_inventory));
+    }
+    if (typeof safeFields.qty_due_lva === 'number') {
+      safeFields.qty_due_lva = Math.max(0, Math.floor(safeFields.qty_due_lva));
+    }
+
+    const updated = { ...row, ...safeFields } as Row;
     setRows((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
     const { data: userRes } = await supabase.auth.getUser();
     const updatedBy = userRes.user?.email ?? null;
     const { error } = await supabase
       .from('jerseys')
-      .update({ ...fields, updated_at: new Date().toISOString(), updated_by: updatedBy })
+      .update({ ...safeFields, updated_at: new Date().toISOString(), updated_by: updatedBy })
       .eq('id', row.id);
     if (error) {
       // revert on failure
@@ -134,7 +143,7 @@ export function InventoryTable() {
     try {
       const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
       const threshold = settings?.low_stock_threshold ?? 1;
-      const effectiveQty = 'qty_inventory' in fields ? (fields.qty_inventory as number) : row.qty_inventory;
+      const effectiveQty = 'qty_inventory' in safeFields ? (safeFields.qty_inventory as number) : row.qty_inventory;
       if (effectiveQty <= threshold) {
         const fallback = buildReorderEmailDraft({
           player_name: updated.player_name,
@@ -386,6 +395,45 @@ export function InventoryTable() {
             />
           </label>
           <button
+            onClick={async () => {
+              try {
+                const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
+                const threshold = settings?.low_stock_threshold ?? 1;
+                const lowStock = filtered.filter(r => r.qty_inventory <= threshold);
+                if (lowStock.length === 0) {
+                  toast.success('No low stock items to reorder');
+                  return;
+                }
+
+                // Build a concise, professional email body listing low-stock items
+                const plainBlocks = lowStock.map(item => buildReorderEmailDraft({
+                  player_name: item.player_name,
+                  edition: item.edition,
+                  size: item.size,
+                  qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
+                })).join('\n\n---\n\n');
+
+                // Polish into one cohesive reorder email thread
+                const aiPolished = await buildReorderEmailDraftAI(plainBlocks);
+
+                const subjectMatch = aiPolished.match(/^Subject:\s*(.*)$/m);
+                const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
+
+                const body = aiPolished.replace(/^Subject:.*\n?/, '');
+                const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                window.location.href = mailto;
+                toast.success(`Reorder email opened (${lowStock.length} item${lowStock.length === 1 ? '' : 's'})`);
+              } catch (e) {
+                console.error('AI reorder email error:', e);
+                toast.error('Failed to generate reorder email');
+              }
+            }}
+            className="btn btn-primary btn-sm"
+            title="Generate reorder email for low stock items"
+          >
+            📧 Reorder Email
+          </button>
+          <button
             onClick={openAddModal}
             className="btn btn-primary btn-sm"
             title="Add new jersey (Ctrl+N)"
@@ -546,11 +594,12 @@ export function InventoryTable() {
         
       {/* Voice Controls */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6">
-        <VoiceMic rows={rows} onAction={async (command): Promise<boolean> => {
+        <VoiceMic rows={rows} onAction={async (command) => {
             console.log('=== VOICE COMMAND DEBUG ===');
             console.log('Voice command received:', command);
             console.log('Current rows count:', rows.length);
             let changed = false;
+            let removedCount = 0;
             
             const resolveDefaultSize = (cmd: typeof command) => {
               if (cmd.size && cmd.size.trim()) return cmd.size.trim();
@@ -821,50 +870,33 @@ export function InventoryTable() {
                   const { data: userRes } = await supabase.auth.getUser();
                   const updatedBy = userRes.user?.email ?? null;
                   
-                  // FIXED: Delete command should reduce inventory quantities across ALL matching items
+                  // FIXED: Delete should decrement quantities only; never hard-delete rows on voice commands
                   let remainingToDelete = quantityToDelete;
                   const updatedItems = [];
                   
-                  // Process ALL matching items until we've deleted the requested quantity
+                  // Process matching items until we've decremented the requested quantity
                   for (const item of matchingItems) {
                     if (remainingToDelete <= 0) break;
                     
                     const currentQuantity = item.qty_inventory || 0;
                     const toRemove = Math.min(remainingToDelete, currentQuantity);
-                    const newQuantity = currentQuantity - toRemove;
-                    
-                    if (newQuantity <= 0) {
-                      // If quantity becomes 0 or negative, delete the entire row
-                      await supabase.from('jerseys').delete().eq('id', item.id);
-                      setRows(prev => prev.filter(r => r.id !== item.id));
-                      updatedItems.push({
-                        id: item.id,
-                        player_name: item.player_name,
-                        edition: item.edition,
-                        size: item.size,
-                        quantity_removed: toRemove,
-                        action: 'deleted_row'
-                      });
-                    } else {
-                      // Update the quantity
-                      await supabase.from('jerseys')
-                        .update({ qty_inventory: newQuantity })
-                        .eq('id', item.id);
-                      
-                      setRows(prev => prev.map(r => 
-                        r.id === item.id ? { ...r, qty_inventory: newQuantity } : r
-                      ));
-                      
-                      updatedItems.push({
-                        id: item.id,
-                        player_name: item.player_name,
-                        edition: item.edition,
-                        size: item.size,
-                        quantity_removed: toRemove,
-                        new_quantity: newQuantity,
-                        action: 'reduced_quantity'
-                      });
-                    }
+                    const newQuantity = Math.max(0, currentQuantity - toRemove);
+                    await supabase.from('jerseys')
+                      .update({ qty_inventory: newQuantity })
+                      .eq('id', item.id);
+                    setRows(prev => prev.map(r => 
+                      r.id === item.id ? { ...r, qty_inventory: newQuantity } : r
+                    ));
+                    removedCount += toRemove;
+                    updatedItems.push({
+                      id: item.id,
+                      player_name: item.player_name,
+                      edition: item.edition,
+                      size: item.size,
+                      quantity_removed: toRemove,
+                      new_quantity: newQuantity,
+                      action: 'reduced_quantity'
+                    });
                     
                     remainingToDelete -= toRemove;
                   }
@@ -907,7 +939,7 @@ export function InventoryTable() {
             } catch (error) {
               console.error('Failed to refresh inventory data:', error);
             }
-            return !!changed;
+            return { success: !!changed, info: { removed: removedCount } };
           }} />
       </div>
 

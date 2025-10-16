@@ -3,9 +3,20 @@ import { transcribeAudio, interpretVoiceCommandWithAI, type VoiceCommand } from 
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
+interface ActionResultInfo {
+  removed?: number;
+  added?: number;
+  setTo?: number;
+}
+
+interface ActionResult {
+  success: boolean;
+  info?: ActionResultInfo;
+}
+
 interface Props {
   rows: JerseyItem[];
-  onAction: (command: VoiceCommand) => Promise<boolean> | boolean;
+  onAction: (command: VoiceCommand) => Promise<boolean | ActionResult> | boolean | ActionResult;
 }
 
 export function VoiceMic({ rows, onAction }: Props) {
@@ -20,6 +31,7 @@ export function VoiceMic({ rows, onAction }: Props) {
   const [apiError, setApiError] = useState<string | null>(null);
   const [speechSynthesis, setSpeechSynthesis] = useState<SpeechSynthesis | null>(null);
   const [hasSpokenGreeting, setHasSpokenGreeting] = useState(false);
+  const touchTimeoutRef = useRef<number | null>(null);
 
   const playBeep = () => {
     try {
@@ -113,7 +125,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     return greetings[Math.floor(Math.random() * greetings.length)];
   };
 
-  const getConfirmationMessage = (command: VoiceCommand) => {
+  const getConfirmationMessage = (command: VoiceCommand, info?: ActionResultInfo) => {
     switch (command.type) {
       case 'add':
         return `Ok, added ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} to inventory.`;
@@ -122,7 +134,7 @@ export function VoiceMic({ rows, onAction }: Props) {
       case 'set':
         return `Ok, set ${command.player_name || ''} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''} to ${command.target_quantity || 0} in inventory.`;
       case 'delete':
-        return `Ok, removed ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
+        return `Ok, removed ${typeof info?.removed === 'number' ? info.removed : (command.quantity || 0)} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
       case 'order':
         return `Ok, order placed for ${command.quantity || 0} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''}.`;
       case 'turn_in':
@@ -139,6 +151,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     const generalPatterns = [
       /^(hello|hi|hey|good morning|good afternoon|good evening)/i,
       /^(how are you|what's up|how's it going)/i,
+      /(i'?m\s+good|i am good|doing well|i'?m\s+fine|i am fine|not bad|pretty good|all good)/i,
       /^(thank you|thanks|appreciate it)/i,
       /^(goodbye|bye|see you later)/i,
       /^(what time|what's the time)/i,
@@ -146,7 +159,9 @@ export function VoiceMic({ rows, onAction }: Props) {
       /^(tell me about|explain|what is)/i,
       /^(joke|funny|laugh)/i,
       /^(help|assist|support)/i,
-      /^(yes|no|okay|ok|sure|alright)/i
+      /^(yes|no|okay|ok|sure|alright)/i,
+      /(last update|last action|what did you do|what was the last thing)/i,
+      /(what is going on currently|what's going on|current status)/i
     ];
     
     return generalPatterns.some(pattern => pattern.test(lowerTranscript));
@@ -155,7 +170,43 @@ export function VoiceMic({ rows, onAction }: Props) {
   const handleGeneralConversation = async (transcript: string): Promise<string> => {
     const lowerTranscript = transcript.toLowerCase();
     
+    // Last update/action summary
+    if (lowerTranscript.includes('last update') || lowerTranscript.includes('last action') || lowerTranscript.includes('what did you do') || lowerTranscript.includes('what was the last')) {
+      if (lastCommand) {
+        const qty = (lastCommand as any).quantity ?? (lastCommand as any).target_quantity ?? '';
+        const parts = [lastCommand.type, qty, lastCommand.edition || '', lastCommand.size ? `size ${lastCommand.size}` : '', lastCommand.player_name || '']
+          .filter(Boolean)
+          .join(' ');
+        return `My last action was: ${parts}.`;
+      }
+      return 'No recent action yet.';
+    }
+
+    // Current status
+    if (lowerTranscript.includes("what is going on currently") || lowerTranscript.includes("what's going on") || lowerTranscript.includes('current status')) {
+      switch (processingStep) {
+        case 'recording':
+          return 'I am recording your voice.';
+        case 'transcribing':
+          return 'I am transcribing your audio.';
+        case 'interpreting':
+          return 'I am understanding your request.';
+        case 'executing':
+          return 'I am executing your command.';
+        case 'success':
+          return 'The last command completed successfully.';
+        case 'error':
+          return 'There was an error on the last command.';
+        default:
+          return 'I am ready and listening for your next command.';
+      }
+    }
+
     // Simple conversation responses
+    if (lowerTranscript.match(/i'?m\s+good|i am good|doing well|i'?m\s+fine|i am fine|not bad|pretty good|all good/)) {
+      return "Great to hear! What would you like to do next?";
+    }
+
     if (lowerTranscript.includes('hello') || lowerTranscript.includes('hi') || lowerTranscript.includes('hey')) {
       return "Hello! I'm your inventory assistant. How can I help you manage your jerseys today?";
     }
@@ -254,13 +305,7 @@ export function VoiceMic({ rows, onAction }: Props) {
         setTranscript('');
         playBeep();
         
-        // MOBILE GREETING: Always try to speak greeting on mobile
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        if (isMobile) {
-          // Reset greeting flag for mobile
-          setHasSpokenGreeting(false);
-        }
-        
+        // Greet once per session
         if (!hasSpokenGreeting) {
           setTimeout(() => {
             speak(getGreetingMessage());
@@ -296,7 +341,6 @@ export function VoiceMic({ rows, onAction }: Props) {
       recognition.onend = () => {
         setListening(false);
         setProcessingStep('idle');
-        setTimeout(() => setHasSpokenGreeting(false), 30000);
       };
       
       recognition.onerror = (event: any) => {
@@ -366,14 +410,24 @@ export function VoiceMic({ rows, onAction }: Props) {
       setLastCommand(command);
       setProcessingStep('executing');
       
-      const succeeded = await Promise.resolve(onAction(command));
-      
+      const actionResult = await Promise.resolve(onAction(command));
+      const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
+      const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
+
       if (succeeded) {
         setProcessingStep('success');
-        const confirmationMessage = getConfirmationMessage(command);
+        const confirmationMessage = getConfirmationMessage(command, info);
         speak(confirmationMessage);
+
+        // Haptic feedback on success (mobile devices)
+        if (navigator.vibrate) {
+          navigator.vibrate([20, 30, 20]);
+        }
       } else {
         setProcessingStep('error');
+        if (navigator.vibrate) {
+          navigator.vibrate([50, 50, 50]);
+        }
       }
       
       setTimeout(() => {
@@ -395,6 +449,12 @@ export function VoiceMic({ rows, onAction }: Props) {
 
   const interpretVoiceCommandLocal = (transcript: string): VoiceCommand => {
     const lowerTranscript = transcript.toLowerCase();
+
+    // Convert common number words to digits for better matching
+    const wordToNum: Record<string, string> = {
+      'zero': '0', 'one': '1', 'two': '2', 'to': '2', 'too': '2', 'three': '3', 'four': '4', 'for': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'ate': '8', 'nine': '9', 'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19', 'twenty': '20'
+    };
+    const normalizedNumbers = lowerTranscript.replace(/\b(zero|one|two|to|too|three|four|for|five|six|seven|eight|ate|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/g, (m) => wordToNum[m] || m);
     
     const extractPlayerName = (text: string) => {
       const playerPatterns = [
@@ -428,10 +488,23 @@ export function VoiceMic({ rows, onAction }: Props) {
       return undefined;
     };
 
-    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all') || lowerTranscript.includes('clear')) {
-      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
-      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
-      const qtyMatch = lowerTranscript.match(/(\d+)/);
+    // Direct pattern: "delete/remove <qty> <edition> jerseys" -> delete
+    const directDelete = normalizedNumbers.match(/\b(delete|remove)\s+(\d+)\s+(?:of\s+)?(icon|icons?|statement|statements?|association|associations?|city|cities)\s+(?:jersey|jerseys)\b/i);
+    if (directDelete) {
+      const qty = parseInt(directDelete[2], 10);
+      const editionWord = directDelete[3];
+      const normalizedEdition = editionWord ? editionWord.replace(/s\b/, '') : undefined;
+      return {
+        type: 'delete',
+        edition: normalizedEdition ? normalizedEdition.charAt(0).toUpperCase() + normalizedEdition.slice(1).toLowerCase() : undefined,
+        quantity: isNaN(qty) ? 1 : qty,
+      };
+    }
+
+    if (normalizedNumbers.includes('delete') || normalizedNumbers.includes('remove all') || normalizedNumbers.includes('clear')) {
+      const editionMatch = normalizedNumbers.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = normalizedNumbers.match(/size\s+(\d+)/i);
+      const qtyMatch = normalizedNumbers.match(/(\d+)/);
       const playerName = extractPlayerName(transcript);
       
       return {
@@ -443,10 +516,10 @@ export function VoiceMic({ rows, onAction }: Props) {
       };
     }
 
-    if (lowerTranscript.includes('add') || lowerTranscript.includes('plus') || lowerTranscript.includes('increase') || lowerTranscript.includes('inc ') || lowerTranscript.includes('more') || lowerTranscript.includes('additional') || lowerTranscript.includes('put') || lowerTranscript.includes('place') || lowerTranscript.includes('create')) {
-      const qtyMatch = lowerTranscript.match(/(\d+)/);
-      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
-      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+    if (normalizedNumbers.includes('add') || normalizedNumbers.includes('plus') || normalizedNumbers.includes('increase') || normalizedNumbers.includes('inc ') || normalizedNumbers.includes('more') || normalizedNumbers.includes('additional') || normalizedNumbers.includes('put') || normalizedNumbers.includes('place') || normalizedNumbers.includes('create')) {
+      const qtyMatch = normalizedNumbers.match(/(\d+)/);
+      const editionMatch = normalizedNumbers.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = normalizedNumbers.match(/size\s+(\d+)/i);
       const playerName = extractPlayerName(transcript);
       
       return {
@@ -458,10 +531,10 @@ export function VoiceMic({ rows, onAction }: Props) {
       };
     }
 
-    if (lowerTranscript.includes('remove') || lowerTranscript.includes('subtract') || lowerTranscript.includes('minus') || lowerTranscript.includes('decrease') || lowerTranscript.includes('dec ') || lowerTranscript.includes('delete') || lowerTranscript.includes('take away') || lowerTranscript.includes('takeaway')) {
-      const qtyMatch = lowerTranscript.match(/(\d+)/);
-      const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
-      const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
+    if (normalizedNumbers.includes('remove') || normalizedNumbers.includes('subtract') || normalizedNumbers.includes('minus') || normalizedNumbers.includes('decrease') || normalizedNumbers.includes('dec ') || normalizedNumbers.includes('take away') || normalizedNumbers.includes('takeaway')) {
+      const qtyMatch = normalizedNumbers.match(/(\d+)/);
+      const editionMatch = normalizedNumbers.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
+      const sizeMatch = normalizedNumbers.match(/size\s+(\d+)/i);
       const playerName = extractPlayerName(transcript);
       
       return {
@@ -522,14 +595,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
-    // MOBILE GREETING: Always speak greeting on mobile when button is clicked
-    if (isMobile) {
-      // Reset greeting flag to allow greeting every time on mobile
-      setHasSpokenGreeting(false);
-      // Speak greeting immediately on mobile
-      speak(getGreetingMessage());
-      setHasSpokenGreeting(true);
-    }
+    // Do not auto-greet on click; greet only once per session when recognition starts
     
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
@@ -741,6 +807,28 @@ export function VoiceMic({ rows, onAction }: Props) {
         }`}
         onClick={listening ? stopListening : startListening}
         disabled={isProcessing}
+        onTouchStart={(e) => {
+          // Long-press to start on mobile (prevents accidental taps)
+          if (touchTimeoutRef.current) window.clearTimeout(touchTimeoutRef.current);
+          touchTimeoutRef.current = window.setTimeout(() => {
+            if (!listening && !isProcessing) startListening();
+          }, 250);
+        }}
+        onTouchEnd={() => {
+          if (touchTimeoutRef.current) {
+            window.clearTimeout(touchTimeoutRef.current);
+            touchTimeoutRef.current = null;
+          }
+          // Release to stop
+          if (listening) stopListening();
+        }}
+        onTouchCancel={() => {
+          if (touchTimeoutRef.current) {
+            window.clearTimeout(touchTimeoutRef.current);
+            touchTimeoutRef.current = null;
+          }
+          if (listening) stopListening();
+        }}
       >
         {getStatusIcon()}
         <span className="hidden sm:inline">
