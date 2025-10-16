@@ -818,10 +818,11 @@ export function InventoryTable() {
                   const { data: userRes } = await supabase.auth.getUser();
                   const updatedBy = userRes.user?.email ?? null;
                   
-                  // FIXED: Delete command should reduce inventory quantities, not delete entire rows
+                  // FIXED: Delete command should reduce inventory quantities across ALL matching items
                   let remainingToDelete = quantityToDelete;
                   const updatedItems = [];
                   
+                  // Process ALL matching items until we've deleted the requested quantity
                   for (const item of matchingItems) {
                     if (remainingToDelete <= 0) break;
                     
