@@ -350,7 +350,7 @@ export function VoiceMic({ rows, onAction }: Props) {
       return undefined;
     };
 
-    if (/(^|\s)(delete|remove all|clear)(\s|$)/i.test(lowerTranscript)) {
+    if (lowerTranscript.includes('delete') || lowerTranscript.includes('remove all') || lowerTranscript.includes('clear')) {
       const editionMatch = lowerTranscript.match(/(icon|icons?|statement|statements?|association|associations?|city|cities)/i);
       const sizeMatch = lowerTranscript.match(/size\s+(\d+)/i);
       const qtyMatch = lowerTranscript.match(/(\d+)/);

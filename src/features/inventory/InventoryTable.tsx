@@ -811,6 +811,9 @@ export function InventoryTable() {
                   r.edition.toLowerCase() === edition.toLowerCase() &&
                   (size ? r.size === size : true)
                 );
+              } else {
+                // If no specific criteria, show error
+                matchingItems = [];
               }
 
               if (matchingItems.length > 0) {
