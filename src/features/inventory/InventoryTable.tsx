@@ -29,6 +29,37 @@ export function InventoryTable() {
   // Session-level defaults: remember last used size per (player, edition)
   const [lastSizeDefaults, setLastSizeDefaults] = useState<Record<string, string>>({});
 
+  // Best-match finder for voice commands (progressively widens criteria)
+  const findBestMatch = (criteria: { player?: string; edition?: string; size?: string }): Row | undefined => {
+    const player = (criteria.player || '').toLowerCase();
+    const edition = (criteria.edition || '').toLowerCase();
+    const size = (criteria.size || '').trim();
+
+    const tryMatch = (p?: boolean, e?: boolean, s?: boolean) =>
+      rows.filter(r =>
+        (p ? r.player_name.toLowerCase() === player : true) &&
+        (e ? r.edition.toLowerCase() === edition : true) &&
+        (s ? r.size === size : true)
+      );
+
+    // player+edition+size
+    let c = tryMatch(!!player, !!edition, !!size);
+    if (c.length > 0) return c[0];
+    // player+edition
+    c = tryMatch(!!player, !!edition, false);
+    if (c.length > 0) return c[0];
+    // edition+size
+    c = tryMatch(false, !!edition, !!size);
+    if (c.length > 0) return c[0];
+    // edition only
+    c = tryMatch(false, !!edition, false);
+    if (c.length > 0) return c[0];
+    // player only
+    c = tryMatch(!!player, false, false);
+    if (c.length > 0) return c[0];
+    return undefined;
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);

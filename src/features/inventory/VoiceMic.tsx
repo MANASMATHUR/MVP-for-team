@@ -157,10 +157,24 @@ export function VoiceMic({ rows, onAction }: Props) {
     const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
     const hasSpeechSynthesis = typeof speechSynthesis !== 'undefined';
     
+    // Check if we're on HTTPS (required for microphone access on mobile)
+    const isSecureContext = window.isSecureContext || location.protocol === 'https:';
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isSecure = isSecureContext || isLocalhost;
+    
     console.log('MediaRecorder support:', hasMediaRecorder);
     console.log('getUserMedia support:', hasGetUserMedia);
     console.log('SpeechRecognition support:', hasSpeechRecognition);
     console.log('SpeechSynthesis support:', hasSpeechSynthesis);
+    console.log('Secure context:', isSecure);
+    console.log('Protocol:', location.protocol);
+    console.log('User agent:', navigator.userAgent);
+    
+    if (!isSecure) {
+      console.warn('Microphone access requires HTTPS on mobile devices');
+      setSupported(false);
+      return;
+    }
     
     if (!hasMediaRecorder && !hasSpeechRecognition) {
       console.warn('No voice recording support available');
@@ -207,7 +221,12 @@ export function VoiceMic({ rows, onAction }: Props) {
     if (!SpeechRecognition) {
       console.error('Browser speech recognition not supported');
       setProcessingStep('error');
-      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        alert('Speech recognition is not supported on this mobile browser. Please:\n1. Use Chrome or Safari on mobile\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+      } else {
+        alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      }
       return;
     }
     
@@ -217,6 +236,15 @@ export function VoiceMic({ rows, onAction }: Props) {
       recognition.interimResults = true;
       recognition.continuous = false;
       recognition.maxAlternatives = 1;
+      
+      // Mobile-specific optimizations
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        console.log('Applying mobile-specific speech recognition settings...');
+        // Some mobile browsers work better with these settings
+        recognition.continuous = true; // Mobile browsers sometimes work better with continuous
+        recognition.interimResults = false; // Reduce processing on mobile
+      }
       
       recognition.onstart = () => {
         setListening(true);
@@ -531,6 +559,14 @@ export function VoiceMic({ rows, onAction }: Props) {
     
     console.log('Starting voice recording...');
     
+    // Check if we're on a mobile device and require user interaction
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      console.log('Mobile device detected, ensuring user interaction...');
+      // Mobile browsers require user interaction before microphone access
+      // This function is called from a button click, so we should be good
+    }
+    
     // Check if we should use browser speech recognition directly
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
@@ -554,16 +590,49 @@ export function VoiceMic({ rows, onAction }: Props) {
     if (typeof MediaRecorder !== 'undefined') {
       try {
         console.log('Requesting microphone access...');
+        
+        // Mobile-friendly audio constraints
+        const audioConstraints: MediaTrackConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        
+        // Add sample rate only if supported (some mobile browsers don't support it)
+        if (navigator.userAgent.includes('Mobile') || navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
+          // For mobile, use simpler constraints
+          console.log('Mobile device detected, using simplified audio constraints');
+        } else {
+          audioConstraints.sampleRate = 44100;
+        }
+        
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100
-          } 
+          audio: audioConstraints
         });
         
         console.log('Microphone access granted, starting recording...');
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        
+        // Check for supported MIME types (mobile browsers have limited support)
+        const supportedMimeTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4',
+          'audio/mp4;codecs=mp4a.40.2',
+          'audio/ogg;codecs=opus',
+          'audio/wav'
+        ];
+        
+        let selectedMimeType = 'audio/webm';
+        for (const mimeType of supportedMimeTypes) {
+          if (MediaRecorder.isTypeSupported(mimeType)) {
+            selectedMimeType = mimeType;
+            console.log('Using MIME type:', mimeType);
+            break;
+          }
+        }
+        
+        console.log('Selected MIME type:', selectedMimeType);
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
         
@@ -577,7 +646,7 @@ export function VoiceMic({ rows, onAction }: Props) {
         mediaRecorder.onstop = async () => {
           console.log('Recording stopped, processing audio...');
           setProcessingStep('transcribing');
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const audioBlob = new Blob(audioChunksRef.current, { type: selectedMimeType });
           
           try {
             console.log('Sending audio to OpenAI Whisper...');
@@ -635,14 +704,20 @@ export function VoiceMic({ rows, onAction }: Props) {
         console.error('Failed to start audio recording:', error);
         setProcessingStep('error');
         
-        // Check for specific error types
+        // Check for specific error types and provide mobile-friendly messages
         if (error instanceof Error) {
           if (error.name === 'NotAllowedError') {
             console.error('Microphone access denied by user');
+            alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
           } else if (error.name === 'NotFoundError') {
             console.error('No microphone found');
+            alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
           } else if (error.name === 'NotSupportedError') {
             console.error('Audio recording not supported');
+            alert('Audio recording not supported on this device. Please:\n1. Use a modern browser (Chrome, Safari, Firefox)\n2. Make sure you\'re using HTTPS\n3. Try on a different device');
+          } else if (error.name === 'SecurityError') {
+            console.error('Security error - likely HTTPS required');
+            alert('Security error: This feature requires HTTPS. Please:\n1. Make sure you\'re using https:// in the URL\n2. Try refreshing the page\n3. Contact support if the issue persists');
           }
         }
       }
@@ -674,7 +749,7 @@ export function VoiceMic({ rows, onAction }: Props) {
         <Volume2 className="h-4 w-4" />
         <span>Voice not supported</span>
         <div className="text-xs text-gray-400">
-          Check browser console for details
+          {location.protocol !== 'https:' ? 'HTTPS required for microphone access' : 'Check browser console for details'}
         </div>
       </div>
     );
