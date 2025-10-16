@@ -818,39 +818,71 @@ export function InventoryTable() {
                   const { data: userRes } = await supabase.auth.getUser();
                   const updatedBy = userRes.user?.email ?? null;
                   
-                  // Only delete the specified quantity, not all items
-                  const itemsToDelete = matchingItems.slice(0, quantityToDelete);
+                  // FIXED: Delete command should reduce inventory quantities, not delete entire rows
+                  let remainingToDelete = quantityToDelete;
+                  const updatedItems = [];
                   
-                  const deletePromises = itemsToDelete.map(item => 
-                    supabase.from('jerseys').delete().eq('id', item.id)
-                  );
-                  await Promise.all(deletePromises);
-                  
-                  setRows(prev => prev.filter(r => !itemsToDelete.some(d => d.id === r.id)));
+                  for (const item of matchingItems) {
+                    if (remainingToDelete <= 0) break;
+                    
+                    const currentQuantity = item.quantity || 0;
+                    const toRemove = Math.min(remainingToDelete, currentQuantity);
+                    const newQuantity = currentQuantity - toRemove;
+                    
+                    if (newQuantity <= 0) {
+                      // If quantity becomes 0 or negative, delete the entire row
+                      await supabase.from('jerseys').delete().eq('id', item.id);
+                      setRows(prev => prev.filter(r => r.id !== item.id));
+                      updatedItems.push({
+                        id: item.id,
+                        player_name: item.player_name,
+                        edition: item.edition,
+                        size: item.size,
+                        quantity_removed: toRemove,
+                        action: 'deleted_row'
+                      });
+                    } else {
+                      // Update the quantity
+                      await supabase.from('jerseys')
+                        .update({ quantity: newQuantity })
+                        .eq('id', item.id);
+                      
+                      setRows(prev => prev.map(r => 
+                        r.id === item.id ? { ...r, quantity: newQuantity } : r
+                      ));
+                      
+                      updatedItems.push({
+                        id: item.id,
+                        player_name: item.player_name,
+                        edition: item.edition,
+                        size: item.size,
+                        quantity_removed: toRemove,
+                        new_quantity: newQuantity,
+                        action: 'reduced_quantity'
+                      });
+                    }
+                    
+                    remainingToDelete -= toRemove;
+                  }
                   
                   await supabase.from('activity_logs').insert({
                     actor: updatedBy,
                     action: 'delete',
                     details: {
-                      deleted_items: itemsToDelete.map(item => ({
-                        id: item.id,
-                        player_name: item.player_name,
-                        edition: item.edition,
-                        size: item.size
-                      })),
+                      updated_items: updatedItems,
                       quantity_requested: quantityToDelete,
-                      quantity_deleted: itemsToDelete.length
+                      quantity_removed: quantityToDelete - remainingToDelete
                     }
                   });
                   
-                  toast.success(`Deleted ${itemsToDelete.length} item(s) (requested: ${quantityToDelete})`);
+                  toast.success(`Removed ${quantityToDelete - remainingToDelete} item(s) from inventory`);
                   changed = true;
                 } catch (error) {
                   console.error('Delete error:', error);
-                  toast.error('Failed to delete items');
+                  toast.error('Failed to remove items from inventory');
                 }
               } else {
-                toast.error('No matching items found to delete');
+                toast.error('No matching items found to remove');
                 return false;
               }
             }
