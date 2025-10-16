@@ -123,13 +123,21 @@ export function VoiceMic({ rows, onAction }: Props) {
               // Mobile browsers sometimes need multiple attempts
               speechSynthesis.speak(utterance);
               
-              // If still not working after 2 seconds, try one more time
+              // If still not working after 1 second, try again
+              setTimeout(() => {
+                if (!speechSynthesis.speaking) {
+                  console.log('Mobile second retry...');
+                  speechSynthesis.speak(utterance);
+                }
+              }, 1000);
+              
+              // Final attempt after 3 seconds
               setTimeout(() => {
                 if (!speechSynthesis.speaking) {
                   console.log('Mobile final retry: Last attempt for speech synthesis...');
                   speechSynthesis.speak(utterance);
                 }
-              }, 2000);
+              }, 3000);
             } else {
               speechSynthesis.speak(utterance);
             }
@@ -298,8 +306,18 @@ export function VoiceMic({ rows, onAction }: Props) {
             if (isMobile) {
               // Mobile browsers require user interaction for speech synthesis
               console.log('Mobile detected, greeting will be spoken after user interaction');
+              // Try multiple times for mobile
+              speak(getGreetingMessage());
+              // Backup attempt after 1 second
+              setTimeout(() => {
+                if (!hasSpokenGreeting) {
+                  console.log('Mobile greeting backup attempt...');
+                  speak(getGreetingMessage());
+                }
+              }, 1000);
+            } else {
+              speak(getGreetingMessage());
             }
-            speak(getGreetingMessage());
             setHasSpokenGreeting(true);
           }, 500);
         }
@@ -633,6 +651,13 @@ export function VoiceMic({ rows, onAction }: Props) {
       console.log('Mobile device detected, ensuring user interaction...');
       // Mobile browsers require user interaction before microphone access
       // This function is called from a button click, so we should be good
+      
+      // MOBILE GREETING: Try to speak greeting immediately on mobile
+      if (!hasSpokenGreeting) {
+        console.log('Mobile: Attempting immediate greeting...');
+        speak(getGreetingMessage());
+        setHasSpokenGreeting(true);
+      }
     }
     
     // Check if we should use browser speech recognition directly
@@ -761,11 +786,23 @@ export function VoiceMic({ rows, onAction }: Props) {
         setListening(true);
         setProcessingStep('recording');
         playBeep();
-        // Only speak greeting once per session
+        // Only speak greeting once per session (mobile-optimized)
         if (!hasSpokenGreeting) {
           setTimeout(() => {
             console.log('Speaking greeting...');
-            speak(getGreetingMessage());
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+              console.log('Mobile greeting attempt...');
+              // Try multiple times for mobile
+              speak(getGreetingMessage());
+              // Backup attempt after 1 second
+              setTimeout(() => {
+                console.log('Mobile greeting backup attempt...');
+                speak(getGreetingMessage());
+              }, 1000);
+            } else {
+              speak(getGreetingMessage());
+            }
             setHasSpokenGreeting(true);
           }, 500);
         }
@@ -923,13 +960,6 @@ export function VoiceMic({ rows, onAction }: Props) {
       <div className="text-xs text-gray-500 hidden md:block">
         Try: "Add 5 Jalen Green Icon size 48" · "Remove 3 Statement jerseys" · "Set Jalen Green Icon to 10" · "Delete all City jerseys"
       </div>
-      
-      {/* Mobile Debug Info */}
-      {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
-        <div className="text-xs text-blue-500 md:hidden">
-          Mobile: {location.protocol === 'https:' ? '✅ HTTPS' : '❌ HTTP'} · {navigator.userAgent.includes('Chrome') ? '✅ Chrome' : navigator.userAgent.includes('Safari') ? '✅ Safari' : '⚠️ Other Browser'}
-        </div>
-      )}
     </div>
   );
 }
