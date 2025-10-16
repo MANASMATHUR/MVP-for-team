@@ -825,7 +825,7 @@ export function InventoryTable() {
                   for (const item of matchingItems) {
                     if (remainingToDelete <= 0) break;
                     
-                    const currentQuantity = item.quantity || 0;
+                    const currentQuantity = item.qty_inventory || 0;
                     const toRemove = Math.min(remainingToDelete, currentQuantity);
                     const newQuantity = currentQuantity - toRemove;
                     
@@ -844,11 +844,11 @@ export function InventoryTable() {
                     } else {
                       // Update the quantity
                       await supabase.from('jerseys')
-                        .update({ quantity: newQuantity })
+                        .update({ qty_inventory: newQuantity })
                         .eq('id', item.id);
                       
                       setRows(prev => prev.map(r => 
-                        r.id === item.id ? { ...r, quantity: newQuantity } : r
+                        r.id === item.id ? { ...r, qty_inventory: newQuantity } : r
                       ));
                       
                       updatedItems.push({
