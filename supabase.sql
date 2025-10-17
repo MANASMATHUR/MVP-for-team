@@ -21,7 +21,7 @@ create table if not exists public.settings (
 alter table public.jerseys enable row level security;
 alter table public.settings enable row level security;
 
--- Create policies idempotently (Postgres doesn't support IF NOT EXISTS for policies)
+
 do $$
 begin
   if not exists (
@@ -49,7 +49,7 @@ begin
   end if;
 end $$;
 
--- Call logs
+-- Call logs ( NOT IN MVP NOW )
 create table if not exists public.call_logs (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),

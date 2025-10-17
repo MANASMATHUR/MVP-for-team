@@ -130,7 +130,7 @@ Try these voice commands:
 
 ## Deployment
 
-### Vercel (Recommended)
+### Vercel 
 1. Connect your GitHub repository to Vercel
 2. Set environment variables in Vercel dashboard
 3. Deploy automatically on push to main branch
@@ -138,9 +138,7 @@ Try these voice commands:
 ### Other Platforms
 The app can be deployed to any platform that supports React applications:
 - Netlify
-- AWS Amplify
-- Railway
-- Render
+
 
 ## Contributing
 
