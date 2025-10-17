@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap, Sparkles } from 'lucide-react';
+import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap, Sparkles, Copy, Mail, ChevronDown } from 'lucide-react';
 import { analyzeInventory, buildReorderEmailDraft, buildReorderEmailDraftAI } from '../../integrations/openai';
+import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
 import toast from 'react-hot-toast';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -23,6 +24,134 @@ interface EditionData {
 }
 
 // RecentCall type removed (recent calls feature not used in MVP)
+
+function ReorderEmailButton() {
+  const [emailData, setEmailData] = useState<{ subject: string; body: string; recipient: string; itemCount: number } | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateEmailData = async () => {
+    if (emailData) return emailData;
+    
+    setIsGenerating(true);
+    try {
+      const { data: settings } = await supabase.from('settings').select('low_stock_threshold, reorder_email_recipient').single();
+      const threshold = settings?.low_stock_threshold ?? 1;
+      const recipient = settings?.reorder_email_recipient;
+      const { data: jerseys } = await supabase.from('jerseys').select('*');
+      const lowStock = (jerseys || []).filter((j: any) => j.qty_inventory <= threshold);
+      
+      if (lowStock.length === 0) {
+        toast.success('No low stock items to reorder');
+        return null;
+      }
+
+      if (!recipient) {
+        toast.error('Please configure reorder email recipient in Settings');
+        return null;
+      }
+
+      const plainBlocks = lowStock.map((item: any) => buildReorderEmailDraft({
+        player_name: item.player_name,
+        edition: item.edition,
+        size: item.size,
+        qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
+      })).join('\n\n---\n\n');
+      
+      const polished = await buildReorderEmailDraftAI(plainBlocks);
+      const subjectMatch = polished.match(/^Subject:\s*(.*)$/m);
+      const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
+      const body = polished.replace(/^Subject:.*\n?/, '');
+      
+      const data = { subject, body, recipient, itemCount: lowStock.length };
+      setEmailData(data);
+      return data;
+    } catch (e) {
+      console.error('Generate reorder email error:', e);
+      toast.error('Failed to generate reorder email');
+      return null;
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDropdownClick = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+  };
+
+  const handleCopy = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+    
+    const success = await copyEmailToClipboard(data.subject, data.body, data.recipient);
+    if (success) {
+      toast.success(`Reorder email copied to clipboard (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
+    } else {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
+  const handleOpenInOutlook = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+    
+    openEmailClient(data.recipient, data.subject, data.body);
+    toast.success(`Reorder email opened in email app (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
+  };
+
+  if (isGenerating) {
+    return (
+      <button className="btn btn-primary" disabled>
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+        Generating...
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleDropdownClick}
+        className="btn btn-primary flex items-center gap-2"
+        title="Reorder email options"
+      >
+        <Mail className="h-4 w-4" />
+        Reorder Email
+        <ChevronDown className="h-4 w-4" />
+      </button>
+
+      {emailData && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={() => setEmailData(null)}
+          />
+          
+          {/* Dropdown Menu */}
+          <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-20">
+            <div className="py-1">
+              <button
+                onClick={handleCopy}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Copy className="h-4 w-4" />
+                Copy to Clipboard
+              </button>
+              <button
+                onClick={handleOpenInOutlook}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                Open Email App
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({
@@ -325,42 +454,7 @@ export function Dashboard() {
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button
-            className="btn btn-primary"
-            onClick={async () => {
-              try {
-                toast.loading('Preparing reorder email...', { id: 'qa-reorder' });
-                const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
-                const threshold = settings?.low_stock_threshold ?? 1;
-                const { data: jerseys } = await supabase.from('jerseys').select('*');
-                const lowStock = (jerseys || []).filter((j: any) => j.qty_inventory <= threshold);
-                if (lowStock.length === 0) {
-                  toast.success('No low stock items to reorder', { id: 'qa-reorder' });
-                  return;
-                }
-                const plainBlocks = lowStock.map((item: any) => buildReorderEmailDraft({
-                  player_name: item.player_name,
-                  edition: item.edition,
-                  size: item.size,
-                  qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
-                })).join('\n\n---\n\n');
-                const polished = await buildReorderEmailDraftAI(plainBlocks);
-                const subjectMatch = polished.match(/^Subject:\s*(.*)$/m);
-                const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
-                const body = polished.replace(/^Subject:.*\n?/, '');
-                const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                window.location.href = mailto;
-                toast.success(`Reorder email opened (${lowStock.length} item${lowStock.length === 1 ? '' : 's'})`, { id: 'qa-reorder' });
-              } catch (e) {
-                console.error('Quick action reorder error:', e);
-                toast.error('Failed to create reorder email', { id: 'qa-reorder' });
-              }
-            }}
-            title="Compose reorder email for low stock"
-          >
-            <Phone className="h-4 w-4" />
-            Reorder Email
-          </button>
+          <ReorderEmailButton />
           <button
             className="btn btn-secondary"
             onClick={async () => {
