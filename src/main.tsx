@@ -1,8 +1,14 @@
 import { StrictMode } from 'react'
+import { inject } from '@vercel/analytics'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { Toaster } from 'react-hot-toast'
+
+// Only inject analytics in production builds
+if (import.meta.env.PROD) {
+  inject()
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
