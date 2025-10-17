@@ -13,6 +13,7 @@ export interface JerseyItem {
 
 export interface Settings {
   low_stock_threshold: number; // default 1
+  reorder_email_recipient?: string; // email address for reorder emails
 }
 
 
