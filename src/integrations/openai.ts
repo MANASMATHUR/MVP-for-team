@@ -440,7 +440,7 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
 // Voice and AI Integration Functions
 
 export interface VoiceCommand {
-  type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'order' | 'unknown';
+  type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'order' | 'show' | 'filter' | 'generate' | 'unknown';
   player_name?: string;
   edition?: string;
   size?: string;
@@ -448,6 +448,8 @@ export interface VoiceCommand {
   target_quantity?: number;
   recipient?: string;
   notes?: string;
+  filter_type?: 'low_stock' | 'zero_stock' | 'lva' | 'player' | 'edition';
+  action?: 'reorder_email' | 'report' | 'export';
 }
 
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
@@ -521,13 +523,15 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
             Current inventory context: ${JSON.stringify(inventoryContext)}
             
             Parse voice commands for inventory operations. Return a JSON object with:
-            - type: 'add', 'remove', 'delete', 'set', 'turn_in', 'order', or 'unknown'
+            - type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'order' | 'show' | 'filter' | 'generate' | 'unknown'
             - player_name: player name if specified
             - edition: 'Icon', 'Statement', 'Association', or 'City' if specified
             - size: jersey size if specified
             - quantity: number for add/remove operations
             - target_quantity: absolute number for 'set' operations
             - recipient: for 'turn_in' operations
+            - filter_type: for 'show'/'filter' -> 'low_stock' | 'zero_stock' | 'lva' | 'player' | 'edition'
+            - action: for 'generate' -> 'reorder_email' | 'report' | 'export'
             - notes: any additional context
             
             Examples:
@@ -538,6 +542,13 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
             "Turn in 2 jerseys for Jalen Green" -> {"type": "turn_in", "player_name": "Jalen Green", "quantity": 2}
             "Delete all City edition jerseys" -> {"type": "delete", "edition": "City"}
             "Order 5 Icon jerseys size 48" -> {"type": "order", "edition": "Icon", "size": "48", "quantity": 5}
+            "Show low stock" -> {"type": "show", "filter_type": "low_stock"}
+            "Show zero stock" -> {"type": "show", "filter_type": "zero_stock"}
+            "Filter by player Jalen Green" -> {"type": "filter", "filter_type": "player", "player_name": "Jalen Green"}
+            "Filter edition City" -> {"type": "filter", "filter_type": "edition", "edition": "City"}
+            "Generate reorder email" -> {"type": "generate", "action": "reorder_email"}
+            "Generate report" -> {"type": "generate", "action": "report"}
+            "Export inventory" -> {"type": "generate", "action": "export"}
             
             Important: If no player name is specified, still process the command with just edition and quantity.`
           },
