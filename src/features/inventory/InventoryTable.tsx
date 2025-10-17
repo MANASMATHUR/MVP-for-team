@@ -4,13 +4,146 @@ import type { JerseyItem, JerseyEdition } from '../../types';
 import { Adjuster } from '../../components/Adjuster';
 import { notifyLowStock } from '../../integrations/make';
 import { buildReorderEmailDraft, buildReorderEmailDraftAI, optimizeOrderQuantity } from '../../integrations/openai';
+import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
+import { validateJerseyData, confirmLargeChange } from '../../utils/validation';
 import { VoiceMic } from './VoiceMic';
-import { Search, Plus, Phone, Download, AlertTriangle, CheckCircle, Clock, Package, Upload, Send, Keyboard } from 'lucide-react';
+import { Search, Plus, Phone, Download, AlertTriangle, CheckCircle, Clock, Package, Upload, Send, Keyboard, Copy, Mail, ChevronDown, Shield, AlertTriangle as Warning } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 type Row = JerseyItem;
 
 const EDITIONS: JerseyEdition[] = ['Icon', 'Statement', 'Association', 'City'];
+
+function ReorderEmailButton({ filtered }: { filtered: Row[] }) {
+  const [emailData, setEmailData] = useState<{ subject: string; body: string; recipient: string; itemCount: number } | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateEmailData = async () => {
+    if (emailData) return emailData;
+    
+    setIsGenerating(true);
+    try {
+      const { data: settings } = await supabase.from('settings').select('low_stock_threshold, reorder_email_recipient').single();
+      const threshold = settings?.low_stock_threshold ?? 1;
+      const recipient = settings?.reorder_email_recipient;
+      const lowStock = filtered.filter(r => r.qty_inventory <= threshold);
+      
+      if (lowStock.length === 0) {
+        toast.success('No low stock items to reorder');
+        return null;
+      }
+
+      if (!recipient) {
+        toast.error('Please configure reorder email recipient in Settings');
+        return null;
+      }
+
+      // Build a concise, professional email body listing low-stock items
+      const plainBlocks = lowStock.map(item => buildReorderEmailDraft({
+        player_name: item.player_name,
+        edition: item.edition,
+        size: item.size,
+        qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
+      })).join('\n\n---\n\n');
+
+      // Polish into one cohesive reorder email thread
+      const aiPolished = await buildReorderEmailDraftAI(plainBlocks);
+
+      const subjectMatch = aiPolished.match(/^Subject:\s*(.*)$/m);
+      const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
+
+      const body = aiPolished.replace(/^Subject:.*\n?/, '');
+      
+      const data = { subject, body, recipient, itemCount: lowStock.length };
+      setEmailData(data);
+      return data;
+    } catch (e) {
+      console.error('Generate reorder email error:', e);
+      toast.error('Failed to generate reorder email');
+      return null;
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDropdownClick = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+  };
+
+  const handleCopy = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+    
+    const success = await copyEmailToClipboard(data.subject, data.body, data.recipient);
+    if (success) {
+      toast.success(`Reorder email copied to clipboard (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
+    } else {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
+  const handleOpenInOutlook = async () => {
+    const data = await generateEmailData();
+    if (!data) return;
+    
+    openEmailClient(data.recipient, data.subject, data.body);
+    toast.success(`Reorder email opened in email app (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
+  };
+
+  if (isGenerating) {
+    return (
+      <button className="btn btn-primary btn-sm" disabled>
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+        Generating...
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleDropdownClick}
+        className="btn btn-primary btn-sm flex items-center gap-2"
+        title="Reorder email options"
+      >
+        <Mail className="h-4 w-4" />
+        Reorder Email
+        <ChevronDown className="h-4 w-4" />
+      </button>
+
+      {emailData && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={() => setEmailData(null)}
+          />
+          
+          {/* Dropdown Menu */}
+          <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-20">
+            <div className="py-1">
+              <button
+                onClick={handleCopy}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Copy className="h-4 w-4" />
+                Copy to Clipboard
+              </button>
+              <button
+                onClick={handleOpenInOutlook}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                Open Email App
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function InventoryTable() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -18,7 +151,10 @@ export function InventoryTable() {
   const [search, setSearch] = useState('');
   const [edition, setEdition] = useState<string>('');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'player_name' | 'qty_inventory' | 'updated_at'>('player_name');
+  const [showZeroStockOnly, setShowZeroStockOnly] = useState(false);
+  const [showLVAOnly, setShowLVAOnly] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'player' | 'edition' | 'size' | 'inventory' | 'lva' | 'updated'>('player');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newItem, setNewItem] = useState<{ player_name: string; edition: JerseyEdition; size: string; qty_inventory: number; qty_due_lva: number }>(
@@ -75,26 +211,51 @@ export function InventoryTable() {
   const filtered = useMemo(() => {
     let filteredRows = rows.filter((r) => {
       const matchesSearch = search
-        ? r.player_name.toLowerCase().includes(search.toLowerCase()) || r.size.includes(search)
+        ? r.player_name.toLowerCase().includes(search.toLowerCase()) || 
+          r.edition.toLowerCase().includes(search.toLowerCase()) ||
+          r.size.includes(search)
         : true;
       const matchesEdition = edition ? r.edition === edition : true;
+      const matchesPlayer = selectedPlayer ? r.player_name === selectedPlayer : true;
       const matchesLowStock = showLowStockOnly ? r.qty_inventory <= 1 : true;
-      return matchesSearch && matchesEdition && matchesLowStock;
+      const matchesZeroStock = showZeroStockOnly ? r.qty_inventory === 0 : true;
+      const matchesLVA = showLVAOnly ? r.qty_due_lva > 0 : true;
+      
+      return matchesSearch && matchesEdition && matchesPlayer && matchesLowStock && matchesZeroStock && matchesLVA;
     });
 
-    // Sort the filtered results
+    // Enhanced sorting
     filteredRows.sort((a, b) => {
-      let aValue: any = a[sortBy];
-      let bValue: any = b[sortBy];
+      let aValue: any, bValue: any;
       
-      if (sortBy === 'updated_at') {
-        aValue = new Date(aValue).getTime();
-        bValue = new Date(bValue).getTime();
-      }
-      
-      if (typeof aValue === 'string') {
-        aValue = aValue.toLowerCase();
-        bValue = bValue.toLowerCase();
+      switch (sortBy) {
+        case 'player':
+          aValue = a.player_name.toLowerCase();
+          bValue = b.player_name.toLowerCase();
+          break;
+        case 'edition':
+          aValue = a.edition.toLowerCase();
+          bValue = b.edition.toLowerCase();
+          break;
+        case 'size':
+          aValue = parseInt(a.size) || 0;
+          bValue = parseInt(b.size) || 0;
+          break;
+        case 'inventory':
+          aValue = a.qty_inventory;
+          bValue = b.qty_inventory;
+          break;
+        case 'lva':
+          aValue = a.qty_due_lva;
+          bValue = b.qty_due_lva;
+          break;
+        case 'updated':
+          aValue = new Date(a.updated_at).getTime();
+          bValue = new Date(b.updated_at).getTime();
+          break;
+        default:
+          aValue = a.player_name.toLowerCase();
+          bValue = b.player_name.toLowerCase();
       }
       
       if (sortOrder === 'asc') {
@@ -105,7 +266,7 @@ export function InventoryTable() {
     });
 
     return filteredRows;
-  }, [rows, search, edition, showLowStockOnly, sortBy, sortOrder]);
+  }, [rows, search, edition, selectedPlayer, showLowStockOnly, showZeroStockOnly, showLVAOnly, sortBy, sortOrder]);
 
   const turnInOne = async (row: Row) => {
     const newInventory = Math.max(0, row.qty_inventory - 1);
@@ -114,6 +275,36 @@ export function InventoryTable() {
   };
 
   const updateField = async (row: Row, fields: Partial<Row>) => {
+    // Validate the updated data
+    const updatedData = { ...row, ...fields };
+    const validation = validateJerseyData(updatedData);
+    
+    if (!validation.isValid) {
+      toast.error(`Validation failed: ${validation.errors.join(', ')}`);
+      return;
+    }
+
+    // Show warnings if any
+    if (validation.warnings.length > 0) {
+      validation.warnings.forEach(warning => {
+        toast(warning, { icon: '⚠️', duration: 3000 });
+      });
+    }
+
+    // Check for large changes and confirm if needed
+    let shouldProceed = true;
+    if (fields.qty_inventory !== undefined) {
+      shouldProceed = await confirmLargeChange('Inventory', row.qty_inventory, fields.qty_inventory);
+    }
+    if (shouldProceed && fields.qty_due_lva !== undefined) {
+      shouldProceed = await confirmLargeChange('LVA Due', row.qty_due_lva, fields.qty_due_lva);
+    }
+
+    if (!shouldProceed) {
+      toast('Update cancelled by user');
+      return;
+    }
+
     // Clamp numeric fields to safe values before optimistic update
     const safeFields: Partial<Row> = { ...fields };
     if (typeof safeFields.qty_inventory === 'number') {
@@ -184,34 +375,19 @@ export function InventoryTable() {
   };
 
   const submitNewItem = async () => {
-    // Enhanced validation
-    if (!newItem.player_name.trim()) {
-      toast.error('Player name is required');
+    // Use our validation system
+    const validation = validateJerseyData(newItem);
+    
+    if (!validation.isValid) {
+      toast.error(`Validation failed: ${validation.errors.join(', ')}`);
       return;
     }
-    if (newItem.player_name.trim().length < 2) {
-      toast.error('Player name must be at least 2 characters');
-      return;
-    }
-    if (!['Icon','Statement','Association','City'].includes(newItem.edition)) {
-      toast.error('Select a valid edition');
-      return;
-    }
-    if (!newItem.size.trim()) {
-      toast.error('Size is required');
-      return;
-    }
-    if (!/^\d+$/.test(newItem.size.trim())) {
-      toast.error('Size must be a number');
-      return;
-    }
-    if (newItem.qty_inventory < 0) {
-      toast.error('Inventory quantity cannot be negative');
-      return;
-    }
-    if (newItem.qty_due_lva < 0) {
-      toast.error('LVA quantity cannot be negative');
-      return;
+
+    // Show warnings if any
+    if (validation.warnings.length > 0) {
+      validation.warnings.forEach(warning => {
+        toast(warning, { icon: '⚠️', duration: 3000 });
+      });
     }
     setAdding(true);
     try {
@@ -394,45 +570,7 @@ export function InventoryTable() {
               }}
             />
           </label>
-          <button
-            onClick={async () => {
-              try {
-                const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
-                const threshold = settings?.low_stock_threshold ?? 1;
-                const lowStock = filtered.filter(r => r.qty_inventory <= threshold);
-                if (lowStock.length === 0) {
-                  toast.success('No low stock items to reorder');
-                  return;
-                }
-
-                // Build a concise, professional email body listing low-stock items
-                const plainBlocks = lowStock.map(item => buildReorderEmailDraft({
-                  player_name: item.player_name,
-                  edition: item.edition,
-                  size: item.size,
-                  qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
-                })).join('\n\n---\n\n');
-
-                // Polish into one cohesive reorder email thread
-                const aiPolished = await buildReorderEmailDraftAI(plainBlocks);
-
-                const subjectMatch = aiPolished.match(/^Subject:\s*(.*)$/m);
-                const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
-
-                const body = aiPolished.replace(/^Subject:.*\n?/, '');
-                const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                window.location.href = mailto;
-                toast.success(`Reorder email opened (${lowStock.length} item${lowStock.length === 1 ? '' : 's'})`);
-              } catch (e) {
-                console.error('AI reorder email error:', e);
-                toast.error('Failed to generate reorder email');
-              }
-            }}
-            className="btn btn-primary btn-sm"
-            title="Generate reorder email for low stock items"
-          >
-            📧 Reorder Email
-          </button>
+          <ReorderEmailButton filtered={filtered} />
           <button
             onClick={openAddModal}
             className="btn btn-primary btn-sm"
@@ -488,21 +626,36 @@ export function InventoryTable() {
         </div>
       )}
 
-      {/* Filters and Search */}
+      {/* Enhanced Filters and Search */}
       <div className="bg-gradient-to-r from-white to-gray-50 rounded-xl shadow-lg border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Search Inventory</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Smart Search</label>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white shadow-sm"
-                placeholder="Search player or size..."
+                placeholder="Search player, edition, or size..."
                 value={search}
                 onChange={(e) => startTransition(() => setSearch(e.target.value))}
                 aria-label="Search inventory"
               />
             </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Player Filter</label>
+            <select 
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white shadow-sm" 
+              value={selectedPlayer} 
+              onChange={(e) => startTransition(() => setSelectedPlayer(e.target.value))}
+              aria-label="Filter by player"
+            >
+              <option value="">All players</option>
+              {Array.from(new Set(rows.map(r => r.player_name))).sort().map((player) => (
+                <option key={player} value={player}>{player}</option>
+              ))}
+            </select>
           </div>
           
           <div>
@@ -519,41 +672,111 @@ export function InventoryTable() {
               ))}
             </select>
           </div>
+          </div>
 
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Sort & Order</label>
-            <div className="flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Sort By</label>
               <select
-                className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white shadow-sm"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white shadow-sm"
                 value={sortBy}
                 onChange={(e) => startTransition(() => setSortBy(e.target.value as any))}
                 aria-label="Sort by"
               >
-                <option value="player_name">Player</option>
-                <option value="qty_inventory">Stock</option>
-                <option value="updated_at">Updated</option>
+              <option value="player">Player Name</option>
+              <option value="edition">Edition</option>
+              <option value="size">Size</option>
+              <option value="inventory">Inventory</option>
+              <option value="lva">LVA Due</option>
+              <option value="updated">Last Updated</option>
               </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Order</label>
               <button
                 onClick={() => startTransition(() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'))}
-                className="px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shadow-sm bg-white"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shadow-sm bg-white flex items-center justify-center gap-2"
                 aria-label="Toggle sort order"
               >
-                {sortOrder === 'asc' ? '↑' : '↓'}
+              <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>
+              <span className="text-sm">{sortOrder === 'asc' ? 'Ascending' : 'Descending'}</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Quick Filters</label>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => {
+                  setShowLowStockOnly(!showLowStockOnly);
+                  setShowZeroStockOnly(false);
+                  setShowLVAOnly(false);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  showLowStockOnly 
+                    ? 'bg-red-100 text-red-700 border-2 border-red-300' 
+                    : 'bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                🔴 Low Stock
+              </button>
+              <button
+                onClick={() => {
+                  setShowZeroStockOnly(!showZeroStockOnly);
+                  setShowLowStockOnly(false);
+                  setShowLVAOnly(false);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  showZeroStockOnly 
+                    ? 'bg-red-100 text-red-700 border-2 border-red-300' 
+                    : 'bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                ⚫ Zero Stock
+              </button>
+              <button
+                onClick={() => {
+                  setShowLVAOnly(!showLVAOnly);
+                  setShowLowStockOnly(false);
+                  setShowZeroStockOnly(false);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  showLVAOnly 
+                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300' 
+                    : 'bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                📦 LVA Due
+              </button>
+              <button
+                onClick={() => {
+                  setShowLowStockOnly(false);
+                  setShowZeroStockOnly(false);
+                  setShowLVAOnly(false);
+                  setSearch('');
+                  setSelectedPlayer('');
+                  setEdition('');
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200 transition-all"
+              >
+                🧹 Clear All
               </button>
             </div>
           </div>
         </div>
         
         <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={showLowStockOnly}
-              onChange={(e) => setShowLowStockOnly(e.target.checked)}
-              className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 transition-colors"
-            />
-            <span className="text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">Show low stock only</span>
-          </label>
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-700">
+              Showing {filtered.length} of {rows.length} items
+            </span>
+            {(showLowStockOnly || showZeroStockOnly || showLVAOnly || search || selectedPlayer || edition) && (
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                Filters active
+              </span>
+            )}
+          </div>
           
           <div className="flex items-center gap-2">
             <div className="text-sm font-semibold text-gray-600">
@@ -921,6 +1144,87 @@ export function InventoryTable() {
                 toast.error('No matching items found to remove');
                 return false;
               }
+            } else if (command.type === 'show' || command.type === 'filter') {
+              // Toggle filters based on voice intent
+              const f = command.filter_type;
+              if (f === 'low_stock') {
+                setShowLowStockOnly(true);
+                setShowZeroStockOnly(false);
+                setShowLVAOnly(false);
+                toast.success('Showing low stock');
+                return { success: true };
+              }
+              if (f === 'zero_stock') {
+                setShowZeroStockOnly(true);
+                setShowLowStockOnly(false);
+                setShowLVAOnly(false);
+                toast.success('Showing zero stock');
+                return { success: true };
+              }
+              if (f === 'lva') {
+                setShowLVAOnly(true);
+                setShowLowStockOnly(false);
+                setShowZeroStockOnly(false);
+                toast.success('Showing items due to LVA');
+                return { success: true };
+              }
+              if (f === 'player' && command.player_name) {
+                setSelectedPlayer(command.player_name);
+                toast.success(`Filtered by player ${command.player_name}`);
+                return { success: true };
+              }
+              if (f === 'edition' && command.edition) {
+                setEdition(command.edition);
+                toast.success(`Filtered by edition ${command.edition}`);
+                return { success: true };
+              }
+              return false;
+            } else if (command.type === 'generate') {
+              const action = (command as any).action as 'reorder_email' | 'report' | 'export' | undefined;
+              if (action === 'reorder_email') {
+                try {
+                  const { data: settings } = await supabase.from('settings').select('low_stock_threshold, reorder_email_recipient').single();
+                  const threshold = settings?.low_stock_threshold ?? 1;
+                  const recipient = settings?.reorder_email_recipient;
+                  const lowStock = rows.filter(r => r.qty_inventory <= threshold);
+                  if (lowStock.length === 0) {
+                    toast.success('No low stock items to reorder');
+                    return { success: true };
+                  }
+                  const blocks = lowStock.map(item => buildReorderEmailDraft({
+                    player_name: item.player_name,
+                    edition: item.edition,
+                    size: item.size,
+                    qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
+                  })).join('\n\n---\n\n');
+                  const polished = await buildReorderEmailDraftAI(blocks);
+                  const subjectMatch = polished.match(/^Subject:\s*(.*)$/m);
+                  const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
+                  const body = polished.replace(/^Subject:.*\n?/, '');
+                  if (recipient) {
+                    const mailto = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    window.location.href = mailto;
+                    toast.success(`Reorder email opened in email app (${lowStock.length} item${lowStock.length === 1 ? '' : 's'})`);
+                  } else {
+                    await navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`);
+                    toast.success('Reorder email copied to clipboard');
+                  }
+                  return { success: true };
+                } catch {
+                  return false;
+                }
+              }
+              if (action === 'report') {
+                // Reuse existing report generator through settings or provide quick path not available here
+                toast('Open Settings → Generate Inventory Report');
+                return { success: true };
+              }
+              if (action === 'export') {
+                await exportData();
+                toast.success('Exported inventory CSV');
+                return { success: true };
+              }
+              return false;
             }
             
             // Force refresh the inventory data after any voice command
@@ -1002,10 +1306,20 @@ export function InventoryTable() {
           <table className="w-full min-w-[1200px]">
             <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '200px'}}>Player</th>
+                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '200px'}}>
+                  <div className="flex items-center gap-2">
+                    Player
+                    <Shield className="h-3 w-3 text-green-500" />
+                  </div>
+                </th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '150px'}}>Edition</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '80px'}}>Size</th>
-                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>Inventory</th>
+                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>
+                  <div className="flex items-center gap-2">
+                    Inventory
+                    <Warning className="h-3 w-3 text-orange-500" />
+                  </div>
+                </th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>Due to LVA</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '100px'}}>Status</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '140px'}}>Last Updated</th>
