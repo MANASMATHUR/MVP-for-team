@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { transcribeAudio, interpretVoiceCommandWithAI, type VoiceCommand } from '../../integrations/openai';
+import { transcribeAudio, interpretVoiceCommandWithAI, getConversationalReply, resetConversationMemory, type VoiceCommand } from '../../integrations/openai';
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
@@ -30,8 +30,12 @@ export function VoiceMic({ rows, onAction }: Props) {
   const [lastCommand, setLastCommand] = useState<VoiceCommand | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [speechSynthesis, setSpeechSynthesis] = useState<SpeechSynthesis | null>(null);
-  const [hasSpokenGreeting, setHasSpokenGreeting] = useState(false);
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const touchTimeoutRef = useRef<number | null>(null);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const autoContinueListening = false; // prevent self-echo; user re-presses to talk
+  const lastAssistantReplyRef = useRef<string>('');
+  const [hasGreeted, setHasGreeted] = useState(false);
 
   const playBeep = () => {
     try {
@@ -64,6 +68,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     }
     
     if (speechSynthesis.speaking) {
+      // Barge-in: stop current speech immediately
       speechSynthesis.cancel();
     }
     
@@ -83,7 +88,16 @@ export function VoiceMic({ rows, onAction }: Props) {
           }
         }
         
+        // Track utterance to support barge-in
+        currentUtteranceRef.current = utterance;
+
+        utterance.onend = () => {
+          currentUtteranceRef.current = null;
+        };
+
         speechSynthesis.speak(utterance);
+        // Update last assistant reply for echo guard
+        lastAssistantReplyRef.current = text;
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (isMobile) {
@@ -115,15 +129,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     }, 100);
   };
 
-  const getGreetingMessage = () => {
-    const greetings = [
-      "Hello! How are you?",
-      "Hi there! How are you?",
-      "Hello! How are you?",
-      "Hi! How are you?"
-    ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
-  };
+  // Removed auto-greeting to avoid feedback loops
 
   const getConfirmationMessage = (command: VoiceCommand, info?: ActionResultInfo) => {
     switch (command.type) {
@@ -167,82 +173,12 @@ export function VoiceMic({ rows, onAction }: Props) {
     return generalPatterns.some(pattern => pattern.test(lowerTranscript));
   };
 
-  const handleGeneralConversation = async (transcript: string): Promise<string> => {
-    const lowerTranscript = transcript.toLowerCase();
-    
-    // Last update/action summary
-    if (lowerTranscript.includes('last update') || lowerTranscript.includes('last action') || lowerTranscript.includes('what did you do') || lowerTranscript.includes('what was the last')) {
-      if (lastCommand) {
-        const qty = (lastCommand as any).quantity ?? (lastCommand as any).target_quantity ?? '';
-        const parts = [lastCommand.type, qty, lastCommand.edition || '', lastCommand.size ? `size ${lastCommand.size}` : '', lastCommand.player_name || '']
-          .filter(Boolean)
-          .join(' ');
-        return `My last action was: ${parts}.`;
-      }
-      return 'No recent action yet.';
-    }
-
-    // Current status
-    if (lowerTranscript.includes("what is going on currently") || lowerTranscript.includes("what's going on") || lowerTranscript.includes('current status')) {
-      switch (processingStep) {
-        case 'recording':
-          return 'I am recording your voice.';
-        case 'transcribing':
-          return 'I am transcribing your audio.';
-        case 'interpreting':
-          return 'I am understanding your request.';
-        case 'executing':
-          return 'I am executing your command.';
-        case 'success':
-          return 'The last command completed successfully.';
-        case 'error':
-          return 'There was an error on the last command.';
-        default:
-          return 'I am ready and listening for your next command.';
-      }
-    }
-
-    // Simple conversation responses
-    if (lowerTranscript.match(/i'?m\s+good|i am good|doing well|i'?m\s+fine|i am fine|not bad|pretty good|all good/)) {
-      return "Great to hear! What would you like to do next?";
-    }
-
-    if (lowerTranscript.includes('hello') || lowerTranscript.includes('hi') || lowerTranscript.includes('hey')) {
-      return "Hello! I'm your inventory assistant. How can I help you manage your jerseys today?";
-    }
-    
-    if (lowerTranscript.includes('how are you') || lowerTranscript.includes('what\'s up')) {
-      return "I'm doing great! Ready to help you with inventory management. What would you like to do?";
-    }
-    
-    if (lowerTranscript.includes('thank you') || lowerTranscript.includes('thanks')) {
-      return "You're welcome! I'm here to help with your inventory. Anything else you need?";
-    }
-    
-    if (lowerTranscript.includes('goodbye') || lowerTranscript.includes('bye')) {
-      return "Goodbye! Feel free to come back anytime for inventory management.";
-    }
-    
-    if (lowerTranscript.includes('help') || lowerTranscript.includes('assist')) {
-      return "I can help you with inventory commands like: Add jerseys, Delete jerseys, Remove jerseys, Set quantities, and Order jerseys. Just tell me what you'd like to do!";
-    }
-    
-    if (lowerTranscript.includes('what time')) {
-      const now = new Date();
-      return `The current time is ${now.toLocaleTimeString()}.`;
-    }
-    
-    if (lowerTranscript.includes('joke') || lowerTranscript.includes('funny')) {
-      const jokes = [
-        "Why don't jerseys ever get cold? Because they're always in the closet!",
-        "What do you call a jersey that's been to space? An astronaut jersey!",
-        "Why did the jersey go to therapy? It had too many issues!"
-      ];
-      return jokes[Math.floor(Math.random() * jokes.length)];
-    }
-    
-    // Default response for general conversation
-    return "I'm your inventory assistant. I can help you manage jerseys with commands like 'Add 5 jerseys', 'Delete 3 city jerseys', or 'Set jerseys to 10'. What would you like to do?";
+  const handleGeneralConversation = async (text: string): Promise<string> => {
+    // Provide minimal app context so replies can reference role succinctly
+    const reply = await getConversationalReply(text, {
+      context: { feature: 'inventory', lastCommand },
+    });
+    return reply;
   };
 
   useEffect(() => {
@@ -304,13 +240,9 @@ export function VoiceMic({ rows, onAction }: Props) {
         setProcessingStep('recording');
         setTranscript('');
         playBeep();
-        
-        // Greet once per session
-        if (!hasSpokenGreeting) {
-          setTimeout(() => {
-            speak(getGreetingMessage());
-            setHasSpokenGreeting(true);
-          }, 500);
+        // Barge-in: stop TTS if it is speaking when user starts talking
+        if (window.speechSynthesis?.speaking) {
+          window.speechSynthesis.cancel();
         }
       };
       
@@ -334,6 +266,11 @@ export function VoiceMic({ rows, onAction }: Props) {
         
         if (finalTranscript) {
           setTranscript(finalTranscript);
+          // Echo guard: ignore if it's exactly the last assistant reply
+          if (lastAssistantReplyRef.current && finalTranscript.trim() === lastAssistantReplyRef.current.trim()) {
+            setProcessingStep('idle');
+            return;
+          }
           await processVoiceCommand(finalTranscript);
         }
       };
@@ -382,22 +319,7 @@ export function VoiceMic({ rows, onAction }: Props) {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
       let command: VoiceCommand;
       
-      // Check if it's a general conversation first
-      const isGeneralConversation = isGeneralChat(transcript);
-      
-      if (isGeneralConversation) {
-        // Handle general conversation
-        setProcessingStep('executing');
-        const response = await handleGeneralConversation(transcript);
-        speak(response);
-        setProcessingStep('success');
-        setTimeout(() => {
-          setProcessingStep('idle');
-        }, 2000);
-        return;
-      }
-      
-      // Handle inventory commands
+      // Prefer trying to interpret an inventory command first (even if the user greets first)
       if (apiKey) {
         command = await interpretVoiceCommandWithAI(transcript, rows);
         if (!command || command.type === 'unknown') {
@@ -405,6 +327,16 @@ export function VoiceMic({ rows, onAction }: Props) {
         }
       } else {
         command = interpretVoiceCommandLocal(transcript);
+      }
+      
+      // If no command recognized, fallback to conversational reply
+      if (!command || command.type === 'unknown') {
+        setProcessingStep('executing');
+        const response = await handleGeneralConversation(transcript);
+        speak(response);
+        setProcessingStep('success');
+        setTimeout(() => setProcessingStep('idle'), 2000);
+        return;
       }
       
       setLastCommand(command);
@@ -487,6 +419,21 @@ export function VoiceMic({ rows, onAction }: Props) {
       
       return undefined;
     };
+
+    // Support "give away/turn in/hand over" -> turn_in with optional recipient "to X"
+    const giveAwayMatch = normalizedNumbers.match(/\b(give away|give|hand over|turn in|turn over|pass|donate)\s+(\d+)\s+(?:of\s+)?(icon|icons?|statement|statements?|association|associations?|city|cities)?\s*(?:jersey|jerseys)?(?:\s+to\s+([a-z]+(?:\s+[a-z]+)?))?/i);
+    if (giveAwayMatch) {
+      const qty = parseInt(giveAwayMatch[2], 10);
+      const editionWord = giveAwayMatch[3];
+      const recipientWord = giveAwayMatch[4];
+      const normalizedEdition = editionWord ? editionWord.replace(/s\b/, '') : undefined;
+      return {
+        type: 'turn_in',
+        edition: normalizedEdition ? normalizedEdition.charAt(0).toUpperCase() + normalizedEdition.slice(1).toLowerCase() : undefined,
+        quantity: isNaN(qty) ? 1 : qty,
+        recipient: recipientWord ? recipientWord.trim().replace(/\b\w/g, c => c.toUpperCase()) : undefined,
+      };
+    }
 
     // Direct pattern: "delete/remove <qty> <edition> jerseys" -> delete
     const directDelete = normalizedNumbers.match(/\b(delete|remove)\s+(\d+)\s+(?:of\s+)?(icon|icons?|statement|statements?|association|associations?|city|cities)\s+(?:jersey|jerseys)\b/i);
@@ -593,7 +540,12 @@ export function VoiceMic({ rows, onAction }: Props) {
   const startListening = async () => {
     if (listening) return;
     
-    // Do not auto-greet on click; greet only once per session when recognition starts
+    // One-time friendly greeting on first button click (no recording during greeting)
+    if (!hasGreeted) {
+      setHasGreeted(true);
+      speak("Hello! How can I help you today?");
+      return;
+    }
     
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
@@ -647,6 +599,13 @@ export function VoiceMic({ rows, onAction }: Props) {
         const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
+
+        // Barge-in: stop any ongoing TTS when mic starts
+        if (window.speechSynthesis?.speaking) {
+          window.speechSynthesis.cancel();
+        }
+
+        // Removed VAD: mic will only stop when user presses the button
         
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
@@ -661,6 +620,8 @@ export function VoiceMic({ rows, onAction }: Props) {
           try {
             const transcript = await transcribeAudio(audioBlob);
             setTranscript(transcript);
+            // Show in transcript list as user message for chat feel
+            setMessages(prev => [...prev, { role: 'user', content: transcript }].slice(-10));
             await processVoiceCommand(transcript);
           } catch (error) {
             setProcessingStep('error');
@@ -682,21 +643,18 @@ export function VoiceMic({ rows, onAction }: Props) {
             setTimeout(() => setProcessingStep('idle'), 3000);
           }
           
+          // No VAD cleanup required
           stream.getTracks().forEach(track => track.stop());
           setListening(false);
         };
         
+        // Reset chat memory on first listen of a session if user long-paused before
+        // (leave as no-op for now; expose a dedicated reset control elsewhere if needed)
         mediaRecorder.start();
         setListening(true);
         setProcessingStep('recording');
         playBeep();
-        // MOBILE GREETING BACKUP: Ensure greeting plays on mobile
-        if (!hasSpokenGreeting) {
-          setTimeout(() => {
-            speak(getGreetingMessage());
-            setHasSpokenGreeting(true);
-          }, 500);
-        }
+        // Removed mobile greeting backup to prevent echo/repetition
         
       } catch (error) {
         setProcessingStep('error');
@@ -834,6 +792,17 @@ export function VoiceMic({ rows, onAction }: Props) {
         </span>
       </button>
       
+      {/* Lightweight transcript view */}
+      {messages.length > 0 && (
+        <div className="hidden md:flex flex-col gap-1 max-w-80 text-xs">
+          {messages.slice(-4).map((m, idx) => (
+            <div key={idx} className={m.role === 'user' ? 'text-gray-700' : 'text-blue-700'}>
+              {m.role === 'user' ? 'You: ' : 'AI: '}"{m.content}"
+            </div>
+          ))}
+        </div>
+      )}
+
       {transcript && (
         <div className="text-sm text-blue-600 max-w-64 truncate bg-blue-50 px-2 py-1 rounded">
           🎤 "{transcript}"

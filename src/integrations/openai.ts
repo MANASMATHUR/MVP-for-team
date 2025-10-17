@@ -452,6 +452,114 @@ export interface VoiceCommand {
   action?: 'reorder_email' | 'report' | 'export';
 }
 
+// Conversational chat memory (in-memory per page session)
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+let chatHistory: ChatMessage[] = [];
+const CHAT_STORAGE_KEY = 'hr_chat_history_v1';
+
+function loadChatHistoryFromStorage(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.slice(-50);
+  } catch {}
+  return [];
+}
+
+function saveChatHistoryToStorage(history: ChatMessage[]): void {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(history.slice(-50)));
+  } catch {}
+}
+
+export function resetConversationMemory() {
+  chatHistory = [];
+  try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch {}
+}
+
+export async function getConversationalReply(userText: string, opts?: {
+  systemPromptOverride?: string;
+  context?: Record<string, unknown>;
+}): Promise<string> {
+  const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+
+  // Fallback simple responses if no API key
+  if (!key) {
+    // Very lightweight local reply mimicking small talk
+    const lower = userText.toLowerCase();
+    if (/how are you|what's up/.test(lower)) return "I'm good and ready to help with inventory!";
+    if (/hello|hi|hey/.test(lower)) return "Hi! How can I help with your inventory today?";
+    if (/thank/.test(lower)) return "You're welcome!";
+    return "I can help with inventory tasks and general questions. What would you like to do?";
+  }
+
+  const systemPrompt =
+    opts?.systemPromptOverride ||
+    `You are an efficient, friendly assistant embedded in a Houston Rockets inventory app.
+Keep replies concise (1-3 sentences) unless the user asks for detail.
+You can chat casually, but prioritize being helpful for inventory workflows.`;
+
+  // Load from storage if empty
+  if (chatHistory.length === 0) {
+    chatHistory = loadChatHistoryFromStorage();
+  }
+
+  // Initialize history with system prompt once per session
+  if (chatHistory.length === 0) {
+    chatHistory.push({ role: 'system', content: systemPrompt });
+  }
+
+  // Append lightweight context once as an assistant note if provided and not already present
+  if (opts?.context) {
+    const serialized = JSON.stringify(opts.context).slice(0, 2000);
+    const hasContext = chatHistory.some(m => m.role === 'assistant' && m.content.startsWith('[context]'));
+    if (!hasContext) {
+      chatHistory.push({ role: 'assistant', content: `[context] ${serialized}` });
+    }
+  }
+
+  chatHistory.push({ role: 'user', content: userText });
+  saveChatHistoryToStorage(chatHistory);
+
+  // Keep the window reasonably small
+  const windowed = chatHistory.slice(-14);
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: windowed,
+        temperature: 0.5,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error?.message || res.statusText);
+    }
+
+    const data = await res.json();
+    const reply: string = data.choices?.[0]?.message?.content?.trim() || '';
+    if (reply) {
+      chatHistory.push({ role: 'assistant', content: reply });
+      saveChatHistoryToStorage(chatHistory);
+      // Trim again if needed
+      if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+      return reply;
+    }
+    return ' '; // avoid speaking "undefined"
+  } catch (err) {
+    console.error('OpenAI conversational reply error:', err);
+    return 'Sorry, I had trouble generating a response.';
+  }
+}
+
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
   if (!key) {
