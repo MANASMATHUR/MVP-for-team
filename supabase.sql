@@ -1,4 +1,4 @@
--- Run this in Supabase SQL editor
+
 create extension if not exists pgcrypto; -- for gen_random_uuid
 
 create table if not exists public.jerseys (
@@ -14,7 +14,8 @@ create table if not exists public.jerseys (
 
 create table if not exists public.settings (
   id int primary key default 1,
-  low_stock_threshold int not null default 1
+  low_stock_threshold int not null default 1,
+  reorder_email_recipient text
 );
 
 alter table public.jerseys enable row level security;
