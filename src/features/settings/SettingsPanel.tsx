@@ -203,6 +203,18 @@ export function SettingsPanel() {
               />
             </div>
 
+            <div>
+              <label className="text-sm font-medium text-gray-700">Reorder Email Recipient</label>
+              <p className="text-xs text-gray-500">Email address for reorder notifications</p>
+              <input
+                type="email"
+                className="input w-full mt-1"
+                placeholder="equipment@houstonrockets.com"
+                value={settings.reorder_email_recipient || ''}
+                onChange={(e) => setSettings((s) => ({ ...s, reorder_email_recipient: e.target.value }))}
+              />
+            </div>
+
             <div className="flex gap-2 pt-4">
               <button 
                 className="btn btn-primary btn-sm" 
