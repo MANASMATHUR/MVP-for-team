@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { Package, AlertTriangle, TrendingUp, Phone, CheckCircle, Users, Activity, Zap, Sparkles, Copy, Mail, ChevronDown } from 'lucide-react';
+import { Package, AlertTriangle, TrendingUp, CheckCircle, Users, Activity, Zap, Sparkles, Copy, Mail, ChevronDown } from 'lucide-react';
 import { analyzeInventory, buildReorderEmailDraft, buildReorderEmailDraftAI } from '../../integrations/openai';
 import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
 import toast from 'react-hot-toast';
