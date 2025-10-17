@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { transcribeAudio, interpretVoiceCommandWithAI, getConversationalReply, resetConversationMemory, type VoiceCommand } from '../../integrations/openai';
+import { transcribeAudio, interpretVoiceCommandWithAI, getConversationalReply, type VoiceCommand } from '../../integrations/openai';
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
@@ -33,7 +33,6 @@ export function VoiceMic({ rows, onAction }: Props) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const touchTimeoutRef = useRef<number | null>(null);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const autoContinueListening = false; // prevent self-echo; user re-presses to talk
   const lastAssistantReplyRef = useRef<string>('');
   const [hasGreeted, setHasGreeted] = useState(false);
 
@@ -150,28 +149,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     }
   };
 
-  const isGeneralChat = (transcript: string): boolean => {
-    const lowerTranscript = transcript.toLowerCase();
-    
-    // Check for general conversation patterns
-    const generalPatterns = [
-      /^(hello|hi|hey|good morning|good afternoon|good evening)/i,
-      /^(how are you|what's up|how's it going)/i,
-      /(i'?m\s+good|i am good|doing well|i'?m\s+fine|i am fine|not bad|pretty good|all good)/i,
-      /^(thank you|thanks|appreciate it)/i,
-      /^(goodbye|bye|see you later)/i,
-      /^(what time|what's the time)/i,
-      /^(what's the weather|how's the weather)/i,
-      /^(tell me about|explain|what is)/i,
-      /^(joke|funny|laugh)/i,
-      /^(help|assist|support)/i,
-      /^(yes|no|okay|ok|sure|alright)/i,
-      /(last update|last action|what did you do|what was the last thing)/i,
-      /(what is going on currently|what's going on|current status)/i
-    ];
-    
-    return generalPatterns.some(pattern => pattern.test(lowerTranscript));
-  };
+  // removed unused isGeneralChat utility
 
   const handleGeneralConversation = async (text: string): Promise<string> => {
     // Provide minimal app context so replies can reference role succinctly
@@ -621,7 +599,7 @@ export function VoiceMic({ rows, onAction }: Props) {
             const transcript = await transcribeAudio(audioBlob);
             setTranscript(transcript);
             // Show in transcript list as user message for chat feel
-            setMessages(prev => [...prev, { role: 'user', content: transcript }].slice(-10));
+            setMessages(prev => [...prev, { role: 'user' as const, content: transcript }].slice(-10));
             await processVoiceCommand(transcript);
           } catch (error) {
             setProcessingStep('error');
