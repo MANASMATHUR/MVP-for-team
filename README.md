@@ -83,7 +83,7 @@ npm run dev
 - **Report Generation**: Automated business reports
 - **Email Drafting**: Professional reorder emails
 
-// Voiceflow integration removed in MVP (voice handled locally/OpenAI)
+
 
 ### Make.com
 - **Webhooks**: Low stock notifications and alerts
