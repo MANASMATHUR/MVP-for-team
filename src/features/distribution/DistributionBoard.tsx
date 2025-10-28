@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { Users, Package, Calendar, TrendingUp } from 'lucide-react';
+import { Users, Package, TrendingUp } from 'lucide-react';
 
 interface DistributionRecord {
   recipient: string;

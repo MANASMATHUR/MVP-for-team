@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { Settings } from '../../types';
 import { notifyLowStock } from '../../integrations/make';
 import { generateInventoryReport, suggestInventoryImprovements } from '../../integrations/openai';
-import { Settings as SettingsIcon, Save, TestTube, Download, Lightbulb, Bell, User, Activity, Mail } from 'lucide-react';
+import { Save, TestTube, Download, Activity, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface UserPreferences {
@@ -33,7 +33,7 @@ export function SettingsPanel() {
   });
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
-  const [improvements, setImprovements] = useState<string[]>([]);
+  // const [improvements, setImprovements] = useState<string[]>([]);
   const [diag, setDiag] = useState<{ supabase: boolean; makeWebhook: boolean; openai: boolean } | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
 
@@ -94,22 +94,22 @@ export function SettingsPanel() {
     }
   };
 
-  const saveUserPreferences = async () => {
-    setSaving(true);
-    try {
-      await supabase.from('user_preferences').upsert({
-        user_email: userEmail,
-        ...userPreferences,
-        updated_at: new Date().toISOString(),
-      });
-      toast.success('Preferences saved successfully');
-    } catch (error) {
-      toast.error('Failed to save preferences');
-      console.error('Save preferences error:', error);
-    } finally {
-    setSaving(false);
-    }
-  };
+  // const saveUserPreferences = async () => {
+  //   setSaving(true);
+  //   try {
+  //     await supabase.from('user_preferences').upsert({
+  //       user_email: userEmail,
+  //       ...userPreferences,
+  //       updated_at: new Date().toISOString(),
+  //     });
+  //     toast.success('Preferences saved successfully');
+  //   } catch (error) {
+  //     toast.error('Failed to save preferences');
+  //     console.error('Save preferences error:', error);
+  //   } finally {
+  //   setSaving(false);
+  //   }
+  // };
 
   const testLowStockAlert = async () => {
     try {

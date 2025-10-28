@@ -5,7 +5,6 @@ import { InventoryTable } from './features/inventory/InventoryTable';
 import { SettingsPanel } from './features/settings/SettingsPanel';
 import { LogsPanel } from './features/logs/LogsPanel';
 import { Dashboard } from './features/dashboard/Dashboard';
-import { DistributionBoard } from './features/distribution/DistributionBoard';
 import { Roster } from './features/dashboard/Roster';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useEffect, useState } from 'react';
