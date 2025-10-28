@@ -58,6 +58,12 @@ VITE_OPENAI_API_KEY=your_openai_api_key
 
 # Make.com Webhook Configuration
 VITE_MAKE_WEBHOOK_URL=your_make_webhook_url
+
+# EmailJS (Automatic Email Alerts)
+# Create a template with variables: email/to_email, subject, message
+VITE_EMAILJS_SERVICE_ID=your_emailjs_service_id
+VITE_EMAILJS_TEMPLATE_ID=your_emailjs_template_id
+VITE_EMAILJS_USER_ID=your_emailjs_public_key
 ```
 
 ### 3. Database Setup

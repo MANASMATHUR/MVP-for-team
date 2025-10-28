@@ -17,9 +17,11 @@ interface ActionResult {
 interface Props {
   rows: JerseyItem[];
   onAction: (command: VoiceCommand) => Promise<boolean | ActionResult> | boolean | ActionResult;
+  locked?: boolean; // keep mic open and auto-restart between utterances
+  large?: boolean;  // big button for mobile sticky bar
 }
 
-export function VoiceMic({ rows, onAction }: Props) {
+export function VoiceMic({ rows, onAction, locked = false, large = false }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [listening, setListening] = useState(false);
@@ -74,17 +76,18 @@ export function VoiceMic({ rows, onAction }: Props) {
     setTimeout(() => {
       try {
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.8;
-        utterance.pitch = 1.0;
+        utterance.rate = 0.92; // slightly slower for clarity
+        utterance.pitch = 0.95; // warmer tone
         utterance.volume = 1.0;
         utterance.lang = 'en-US';
         
         const voices = speechSynthesis.getVoices();
         if (voices.length > 0) {
-          const englishVoice = voices.find(voice => voice.lang.startsWith('en'));
-          if (englishVoice) {
-            utterance.voice = englishVoice;
-          }
+          // prefer high-quality English female voices where available
+          const preferred = voices.find(v => /en-US/i.test(v.lang) && /female|samantha|google us english/i.test((v as any).name || ''))
+            || voices.find(v => /en-US/i.test(v.lang))
+            || voices.find(v => v.lang.startsWith('en'));
+          if (preferred) utterance.voice = preferred;
         }
         
         // Track utterance to support barge-in
@@ -256,6 +259,12 @@ export function VoiceMic({ rows, onAction }: Props) {
       recognition.onend = () => {
         setListening(false);
         setProcessingStep('idle');
+        if (locked) {
+          // auto-restart after a short pause for noisy environments
+          setTimeout(() => {
+            if (!listening) startBrowserSpeechRecognition();
+          }, 300);
+        }
       };
       
       recognition.onerror = (event: any) => {
@@ -521,7 +530,7 @@ export function VoiceMic({ rows, onAction }: Props) {
     // One-time friendly greeting on first button click (no recording during greeting)
     if (!hasGreeted) {
       setHasGreeted(true);
-      speak("Hello! How can I help you today?");
+      speak("I'm listening. Say things like 'send two association jerseys to cleaners' or 'give away three city jerseys'.");
       return;
     }
     
@@ -624,6 +633,11 @@ export function VoiceMic({ rows, onAction }: Props) {
           // No VAD cleanup required
           stream.getTracks().forEach(track => track.stop());
           setListening(false);
+          if (locked) {
+            setTimeout(() => {
+              if (!listening && !isProcessing) startBrowserSpeechRecognition();
+            }, 300);
+          }
         };
         
         // Reset chat memory on first listen of a session if user long-paused before
@@ -730,14 +744,14 @@ export function VoiceMic({ rows, onAction }: Props) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={`flex items-center gap-2 ${large ? 'w-full' : ''}`}>
       <button
-        className={`btn btn-sm ${
+        className={`${large ? 'w-full py-3 rounded-xl text-base font-bold' : 'btn btn-sm'} ${
           listening 
-            ? 'btn-error' 
+            ? (large ? 'text-white bg-red-600 border-red-700' : 'btn-error') 
             : isProcessing 
-            ? 'btn-warning' 
-            : 'btn-secondary'
+            ? (large ? 'text-white bg-yellow-600 border-yellow-700' : 'btn-warning') 
+            : (large ? 'text-white bg-blue-600 border-blue-700' : 'btn-secondary')
         }`}
         onClick={listening ? stopListening : startListening}
         disabled={isProcessing}
@@ -765,14 +779,14 @@ export function VoiceMic({ rows, onAction }: Props) {
         }}
       >
         {getStatusIcon()}
-        <span className="hidden sm:inline">
+        <span className={large ? '' : 'hidden sm:inline'}>
           {getStatusText()}
         </span>
       </button>
       
       {/* Lightweight transcript view */}
       {messages.length > 0 && (
-        <div className="hidden md:flex flex-col gap-1 max-w-80 text-xs">
+        <div className={`flex-col gap-1 text-xs ${large ? 'flex max-w-full' : 'hidden md:flex max-w-80'}`}>
           {messages.slice(-4).map((m, idx) => (
             <div key={idx} className={m.role === 'user' ? 'text-gray-700' : 'text-blue-700'}>
               {m.role === 'user' ? 'You: ' : 'AI: '}"{m.content}"

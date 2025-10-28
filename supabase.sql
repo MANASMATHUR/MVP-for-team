@@ -8,6 +8,12 @@ create table if not exists public.jerseys (
   size text not null,
   qty_inventory int not null default 0,
   qty_due_lva int not null default 0,
+  vendor text,
+  color text,
+  limited boolean not null default false,
+  laundry_due_at timestamptz,
+  qty_locker int not null default 0,
+  qty_closet int not null default 0,
   updated_at timestamptz not null default now(),
   updated_by text
 );
@@ -15,7 +21,9 @@ create table if not exists public.jerseys (
 create table if not exists public.settings (
   id int primary key default 1,
   low_stock_threshold int not null default 1,
-  reorder_email_recipient text
+  reorder_email_recipient text,
+  locker_max int not null default 3,
+  closet_max int not null default 5
 );
 
 alter table public.jerseys enable row level security;

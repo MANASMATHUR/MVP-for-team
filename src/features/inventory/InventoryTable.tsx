@@ -5,9 +5,12 @@ import { Adjuster } from '../../components/Adjuster';
 import { notifyLowStock } from '../../integrations/make';
 import { buildReorderEmailDraft, buildReorderEmailDraftAI, optimizeOrderQuantity } from '../../integrations/openai';
 import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
+import { sendLowStockEmail } from '../../integrations/make';
 import { validateJerseyData, confirmLargeChange } from '../../utils/validation';
 import { VoiceMic } from './VoiceMic';
 import { Search, Plus, Phone, Download, AlertTriangle, CheckCircle, Clock, Package, Upload, Send, Keyboard, Copy, Mail, ChevronDown, Shield, AlertTriangle as Warning } from 'lucide-react';
+import { QuickActions } from '../../components/QuickActions';
+import { SimplePad } from '../../components/SimplePad';
 import toast from 'react-hot-toast';
 
 type Row = JerseyItem;
@@ -162,6 +165,14 @@ export function InventoryTable() {
   );
   const [adding, setAdding] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [simpleMode, setSimpleMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('simpleMode');
+      if (saved != null) return saved === '1';
+      return window.innerWidth < 768; // default to simple on mobile
+    }
+    return true;
+  });
   // Session-level defaults: remember last used size per (player, edition)
   const [lastSizeDefaults, setLastSizeDefaults] = useState<Record<string, string>>({});
 
@@ -268,9 +279,20 @@ export function InventoryTable() {
     return filteredRows;
   }, [rows, search, edition, selectedPlayer, showLowStockOnly, showZeroStockOnly, showLVAOnly, sortBy, sortOrder]);
 
+  // Prevent layout shift flicker on modal open by locking body scroll
+  useEffect(() => {
+    const lockScroll = (e: any) => {
+      if (document.body.classList.contains('modal-open')) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('touchmove', lockScroll, { passive: false } as any);
+    return () => document.removeEventListener('touchmove', lockScroll as any);
+  }, []);
+
   const turnInOne = async (row: Row) => {
     const newInventory = Math.max(0, row.qty_inventory - 1);
-    const newDueLva = row.qty_due_lva + 1;
+    const newDueLva = row.qty_due_lva + 1; // treat as at-laundry count
     await updateField(row, { qty_inventory: newInventory, qty_due_lva: newDueLva });
   };
 
@@ -332,8 +354,9 @@ export function InventoryTable() {
 
     // Low stock notify (client-side MVP)
     try {
-      const { data: settings } = await supabase.from('settings').select('low_stock_threshold').single();
+      const { data: settings } = await supabase.from('settings').select('low_stock_threshold, reorder_email_recipient').single();
       const threshold = settings?.low_stock_threshold ?? 1;
+      const recipient = settings?.reorder_email_recipient;
       const effectiveQty = 'qty_inventory' in safeFields ? (safeFields.qty_inventory as number) : row.qty_inventory;
       if (effectiveQty <= threshold) {
         const fallback = buildReorderEmailDraft({
@@ -343,6 +366,22 @@ export function InventoryTable() {
           qty_needed: Math.max(1, (threshold - effectiveQty) || 1)
         });
         const draft = await buildReorderEmailDraftAI(fallback);
+        
+        // Send email automatically if recipient is configured
+        if (recipient) {
+          const subjectMatch = draft.match(/^Subject:\s*(.*)$/m);
+          const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${updated.player_name} ${updated.edition} ${updated.size}`;
+          const body = draft.replace(/^Subject:.*\n?/, '');
+          
+          const emailSent = await sendLowStockEmail(subject, body, recipient);
+          if (emailSent) {
+            toast.success(`Low stock alert sent to ${recipient}`);
+          } else {
+            // Don't show error - EmailJS not configured is expected during setup
+            console.log('EmailJS not configured - email not sent automatically');
+          }
+        }
+        
         await notifyLowStock({
           id: row.id,
           player_name: updated.player_name,
@@ -536,10 +575,14 @@ export function InventoryTable() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-          <p className="text-gray-600">Manage jersey inventory and track stock levels</p>
+          <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
+          <p className="text-gray-600">Fast actions for noisy environments</p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={simpleMode} onChange={(e) => { setSimpleMode(e.target.checked); try { window.localStorage.setItem('simpleMode', e.target.checked ? '1' : '0'); } catch {} }} />
+            Simple Mode
+          </label>
           <button
             onClick={() => setShowKeyboardHelp(!showKeyboardHelp)}
             className="btn btn-secondary btn-sm"
@@ -626,7 +669,40 @@ export function InventoryTable() {
         </div>
       )}
 
+      {/* Simple Mode */}
+      {simpleMode && (
+        <SimplePad
+          rows={rows}
+          onApply={async (action, args) => {
+            const match = rows.find(r => r.player_name === args.player_name && r.edition === args.edition && r.size === args.size);
+            if (!match) { toast.error('Item not found'); return; }
+            if (action === 'given_away') {
+              await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - args.quantity) });
+              toast.success(`Recorded giveaway of ${args.quantity}`);
+              return;
+            }
+            if (action === 'to_cleaners') {
+              const dec = Math.min(args.quantity, match.qty_inventory);
+              await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - dec), qty_due_lva: match.qty_due_lva + dec });
+              toast.success(`Sent ${dec} to laundry`);
+              return;
+            }
+            if (action === 'ordered') {
+              try { await supabase.from('activity_logs').insert({ action: 'ordered', details: { id: match.id, ...args } }); } catch {}
+              toast.success('Order recorded');
+              return;
+            }
+            if (action === 'received') {
+              await updateField(match, { qty_inventory: match.qty_inventory + args.quantity });
+              toast.success(`Received ${args.quantity}`);
+              return;
+            }
+          }}
+        />
+      )}
+
       {/* Enhanced Filters and Search */}
+      {!simpleMode && (
       <div className="bg-gradient-to-r from-white to-gray-50 rounded-xl shadow-lg border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-2">
@@ -814,13 +890,11 @@ export function InventoryTable() {
           </div>
         </div>
         </div>
+      )}
         
       {/* Voice Controls */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6">
         <VoiceMic rows={rows} onAction={async (command) => {
-            console.log('=== VOICE COMMAND DEBUG ===');
-            console.log('Voice command received:', command);
-            console.log('Current rows count:', rows.length);
             let changed = false;
             let removedCount = 0;
             
@@ -1301,6 +1375,7 @@ export function InventoryTable() {
       </div>
 
       {/* Inventory Table - Desktop View */}
+      {!simpleMode && (
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px]">
@@ -1320,7 +1395,7 @@ export function InventoryTable() {
                     <Warning className="h-3 w-3 text-orange-500" />
                   </div>
                 </th>
-                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>Due to LVA</th>
+                <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>At Laundry</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '100px'}}>Status</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '140px'}}>Last Updated</th>
                 <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider" style={{minWidth: '120px'}}>Updated By</th>
@@ -1468,6 +1543,41 @@ export function InventoryTable() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Quick Actions (mobile-first, also works on desktop) */}
+      <QuickActions
+        rows={rows}
+        onApply={async (action, args) => {
+          const match = rows.find(r => r.player_name === args.player_name && r.edition === args.edition && r.size === args.size);
+          if (!match) {
+            toast.error('Item not found');
+            return;
+          }
+          if (action === 'given_away') {
+            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - args.quantity) });
+            toast.success(`Recorded giveaway of ${args.quantity}`);
+            return;
+          }
+          if (action === 'to_cleaners') {
+            const dec = Math.min(args.quantity, match.qty_inventory);
+            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - dec), qty_due_lva: match.qty_due_lva + dec });
+            toast.success(`Sent ${dec} to laundry`);
+            return;
+          }
+          if (action === 'ordered') {
+            // For ordered, we do not change on-hand yet; log only
+            try { await supabase.from('activity_logs').insert({ action: 'ordered', details: { id: match.id, ...args } }); } catch {}
+            toast.success('Order recorded');
+            return;
+          }
+          if (action === 'received') {
+            await updateField(match, { qty_inventory: match.qty_inventory + args.quantity });
+            toast.success(`Received ${args.quantity}`);
+            return;
+          }
+        }}
+      />
 
       {/* Mobile Cards View */}
       <div className="hidden space-y-4">

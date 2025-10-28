@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabaseClient';
 import type { Settings } from '../../types';
 import { notifyLowStock } from '../../integrations/make';
 import { generateInventoryReport, suggestInventoryImprovements } from '../../integrations/openai';
-import { Settings as SettingsIcon, Save, TestTube, Download, Lightbulb, Bell, User, Activity } from 'lucide-react';
+import { Settings as SettingsIcon, Save, TestTube, Download, Lightbulb, Bell, User, Activity, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface UserPreferences {
@@ -170,248 +170,224 @@ export function SettingsPanel() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings & Preferences</h1>
-          <p className="text-gray-600">Configure system settings and user preferences</p>
-        </div>
-        <SettingsIcon className="h-8 w-8 text-gray-400" />
+      <div className="border-b border-gray-200 pb-4">
+        <h1 className="text-3xl font-semibold text-gray-900">Settings</h1>
+        <p className="text-gray-500 mt-1">Manage your system configuration and preferences</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* System Settings */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <SettingsIcon className="h-5 w-5" />
-            System Settings
-          </h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700">Low Stock Threshold</label>
-                <p className="text-xs text-gray-500">Alert when inventory falls below this number</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Settings Card */}
+        <div className="lg:col-span-2">
+          <div className="card p-8">
+            <div className="space-y-6">
+              {/* Notification Settings */}
+              <div className="border-b border-gray-100 pb-6 last:border-0">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Notification Settings</h3>
+                
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Low Stock Threshold
+                    </label>
+                    <p className="text-sm text-gray-500 mb-3">
+                      Receive alerts when inventory falls below this quantity
+                    </p>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="number"
+                        className="input w-32"
+                        value={settings.low_stock_threshold}
+                        min={0}
+                        onChange={(e) => setSettings((s) => ({ ...s, low_stock_threshold: parseInt(e.target.value || '0', 10) }))}
+                      />
+                      <span className="text-sm text-gray-500">units</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Alert Recipient
+                    </label>
+                    <p className="text-sm text-gray-500 mb-3">
+                      Email address to receive low stock notifications
+                    </p>
+                    <input
+                      type="email"
+                      className="input w-full"
+                      placeholder="equipment@houstonrockets.com"
+                      value={settings.reorder_email_recipient || ''}
+                      onChange={(e) => setSettings((s) => ({ ...s, reorder_email_recipient: e.target.value }))}
+                    />
+                  </div>
+                </div>
               </div>
-              <input
-                type="number"
-                className="input w-24"
-                value={settings.low_stock_threshold}
-                min={0}
-                onChange={(e) => setSettings((s) => ({ ...s, low_stock_threshold: parseInt(e.target.value || '0', 10) }))}
-              />
+
+              {/* Email Configuration */}
+              <div className="border-b border-gray-100 pb-6 last:border-0">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Email Service</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Automatic email delivery status
+                </p>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-700">Service ID</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 font-mono">
+                        {import.meta.env.VITE_EMAILJS_SERVICE_ID ? 'Configured' : 'Not set'}
+                      </span>
+                      <div className={`w-2 h-2 rounded-full ${
+                        import.meta.env.VITE_EMAILJS_SERVICE_ID ? 'bg-green-500' : 'bg-red-500'
+                      }`}></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-700">Template ID</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 font-mono">
+                        {import.meta.env.VITE_EMAILJS_TEMPLATE_ID ? 'Configured' : 'Not set'}
+                      </span>
+                      <div className={`w-2 h-2 rounded-full ${
+                        import.meta.env.VITE_EMAILJS_TEMPLATE_ID ? 'bg-green-500' : 'bg-red-500'
+                      }`}></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-700">Public Key</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 font-mono">
+                        {import.meta.env.VITE_EMAILJS_USER_ID ? 'Configured' : 'Not set'}
+                      </span>
+                      <div className={`w-2 h-2 rounded-full ${
+                        import.meta.env.VITE_EMAILJS_USER_ID ? 'bg-green-500' : 'bg-red-500'
+                      }`}></div>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-4">
+                  Configure these in your environment variables to enable automatic email alerts
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button 
+                  className="btn btn-primary"
+                  disabled={saving} 
+                  onClick={saveSettings}
+                >
+                  <Save className="h-4 w-4" />
+                  Save Changes
+                </button>
+                <button
+                  className="btn btn-outline"
+                  onClick={testLowStockAlert}
+                >
+                  <TestTube className="h-4 w-4" />
+                  Test Alert
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar - Quick Actions */}
+        <div className="space-y-4">
+          {/* System Status */}
+          <div className="card p-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide text-xs">
+              System Status
+            </h3>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Supabase</span>
+                <div className={`w-2 h-2 rounded-full ${diag?.supabase ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">OpenAI API</span>
+                <div className={`w-2 h-2 rounded-full ${
+                  import.meta.env.VITE_OPENAI_API_KEY ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Make.com</span>
+                <div className={`w-2 h-2 rounded-full ${
+                  import.meta.env.VITE_MAKE_WEBHOOK_URL ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+              </div>
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">Reorder Email Recipient</label>
-              <p className="text-xs text-gray-500">Email address for reorder notifications</p>
-              <input
-                type="email"
-                className="input w-full mt-1"
-                placeholder="equipment@houstonrockets.com"
-                value={settings.reorder_email_recipient || ''}
-                onChange={(e) => setSettings((s) => ({ ...s, reorder_email_recipient: e.target.value }))}
-              />
-            </div>
+            <button 
+              className="btn btn-sm btn-outline w-full mt-4" 
+              onClick={runDiagnostics} 
+              disabled={diagRunning}
+            >
+              <Activity className="h-4 w-4" />
+              {diagRunning ? 'Running...' : 'Run Diagnostics'}
+            </button>
+          </div>
 
-            <div className="flex gap-2 pt-4">
-              <button 
-                className="btn btn-primary btn-sm" 
-                disabled={saving} 
-                onClick={saveSettings}
-              >
-                <Save className="h-4 w-4" />
-                Save Settings
-              </button>
+          {/* Quick Actions */}
+          <div className="card p-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide text-xs">
+              Actions
+            </h3>
+            
+            <div className="space-y-3">
               <button
-                className="btn btn-secondary btn-sm"
+                className="btn btn-outline w-full justify-start"
+                onClick={generateReport}
+              >
+                <Download className="h-4 w-4" />
+                Download Report
+              </button>
+              
+              <button
+                className="btn btn-outline w-full justify-start"
                 onClick={testLowStockAlert}
               >
                 <TestTube className="h-4 w-4" />
-                Test Alert
+                Test Webhook
               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* User Preferences */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <User className="h-5 w-5" />
-            User Preferences
-          </h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Email Notifications</label>
-              <div className="mt-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={userPreferences.notification_preferences.email}
-                    onChange={(e) => setUserPreferences(prev => ({
-                      ...prev,
-                      notification_preferences: {
-                        ...prev.notification_preferences,
-                        email: e.target.checked,
+              
+              {import.meta.env.VITE_EMAILJS_USER_ID && (
+                <button
+                  className="btn btn-outline w-full justify-start"
+                  onClick={async () => {
+                    try {
+                      const { sendLowStockEmail } = await import('../../integrations/make');
+                      const emailjsServiceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+                      const emailjsTemplateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+                      const emailjsUserId = import.meta.env.VITE_EMAILJS_USER_ID;
+                      
+                      if (emailjsServiceId && emailjsTemplateId && emailjsUserId) {
+                        const success = await sendLowStockEmail(
+                          'Test: Low Stock Alert',
+                          'This is a test email from Houston Rockets Inventory System.',
+                          settings.reorder_email_recipient || userEmail
+                        );
+                        if (success) {
+                          toast.success(`Test email sent to ${settings.reorder_email_recipient || userEmail}`);
+                        } else {
+                          toast.error('Failed to send test email');
+                        }
                       }
-                    }))}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">Receive email notifications</span>
-                </label>
-              </div>
+                    } catch (e) {
+                      toast.error('Test email failed');
+                    }
+                  }}
+                >
+                  <Mail className="h-4 w-4" />
+                  Test Email
+                </button>
+              )}
             </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Browser Notifications</label>
-              <div className="mt-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={userPreferences.notification_preferences.browser}
-                    onChange={(e) => setUserPreferences(prev => ({
-                      ...prev,
-                      notification_preferences: {
-                        ...prev.notification_preferences,
-                        browser: e.target.checked,
-                      }
-                    }))}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">Show browser notifications</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Items Per Page</label>
-              <select
-                className="input w-32 mt-1"
-                value={userPreferences.dashboard_settings.items_per_page}
-                onChange={(e) => setUserPreferences(prev => ({
-                  ...prev,
-                  dashboard_settings: {
-                    ...prev.dashboard_settings,
-                    items_per_page: parseInt(e.target.value),
-                  }
-                }))}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <button 
-                className="btn btn-primary btn-sm" 
-                disabled={saving} 
-                onClick={saveUserPreferences}
-              >
-                <Save className="h-4 w-4" />
-                Save Preferences
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Reports & Analytics */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Reports & Analytics
-          </h3>
-          
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Generate comprehensive inventory reports with AI-powered insights and recommendations.
-            </p>
-            
-            <button
-              className="btn btn-primary btn-sm w-full"
-              onClick={generateReport}
-            >
-              <Download className="h-4 w-4" />
-              Generate Inventory Report
-        </button>
-          </div>
-        </div>
-
-        {/* AI Suggestions */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Lightbulb className="h-5 w-5" />
-            AI-Powered Suggestions
-          </h3>
-          
-          <div className="space-y-3">
-            {improvements.length > 0 ? (
-              <ul className="space-y-2">
-                {improvements.map((improvement, index) => (
-                  <li key={index} className="flex items-start gap-2 text-sm text-gray-700">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                    <span>{improvement}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-500">Loading suggestions...</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Integration Status */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Bell className="h-5 w-5" />
-          Integration Status
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Make.com Webhook</p>
-              <p className="text-xs text-gray-500">Low stock notifications</p>
-            </div>
-            <div className={`w-3 h-3 rounded-full ${
-              import.meta.env.VITE_MAKE_WEBHOOK_URL ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-          </div>
-          
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-700">OpenAI API</p>
-              <p className="text-xs text-gray-500">AI-powered features</p>
-            </div>
-            <div className={`w-3 h-3 rounded-full ${
-              import.meta.env.VITE_OPENAI_API_KEY ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-          </div>
-          
-          
-        </div>
-
-        
-
-        <div className="mt-4">
-          <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-            <Activity className="h-4 w-4" /> Diagnostics
-          </h4>
-          <div className="flex items-center gap-2">
-            <button className="btn btn-secondary btn-sm" onClick={runDiagnostics} disabled={diagRunning}>
-              {diagRunning ? 'Running…' : 'Run Diagnostics'}
-            </button>
-            {diag && (
-              <div className="text-sm text-gray-700">
-                <span className={`px-2 py-0.5 rounded ${diag.supabase ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>Supabase</span>
-                <span className={`ml-2 px-2 py-0.5 rounded ${diag.makeWebhook ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>Make</span>
-                <span className={`ml-2 px-2 py-0.5 rounded ${diag.openai ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>OpenAI</span>
-              </div>
-            )}
           </div>
         </div>
       </div>

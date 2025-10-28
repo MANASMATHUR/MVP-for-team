@@ -7,6 +7,12 @@ export interface JerseyItem {
   size: string; // number-based as string e.g., '46', '48'
   qty_inventory: number;
   qty_due_lva: number;
+  vendor?: string | null;
+  color?: string | null;
+  limited?: boolean;
+  laundry_due_at?: string | null;
+  qty_locker?: number;
+  qty_closet?: number;
   updated_at: string; // ISO string
   updated_by?: string | null;
 }
@@ -14,6 +20,8 @@ export interface JerseyItem {
 export interface Settings {
   low_stock_threshold: number; // default 1
   reorder_email_recipient?: string; // email address for reorder emails
+  locker_max?: number;
+  closet_max?: number;
 }
 
 

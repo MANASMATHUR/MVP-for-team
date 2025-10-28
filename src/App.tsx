@@ -5,13 +5,15 @@ import { InventoryTable } from './features/inventory/InventoryTable';
 import { SettingsPanel } from './features/settings/SettingsPanel';
 import { LogsPanel } from './features/logs/LogsPanel';
 import { Dashboard } from './features/dashboard/Dashboard';
+import { DistributionBoard } from './features/distribution/DistributionBoard';
+import { Roster } from './features/dashboard/Roster';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabaseClient';
-import { Bell, Settings, Package, BarChart3, LogOut, User, Wifi, WifiOff } from 'lucide-react';
+import { Bell, Settings, Package, BarChart3, LogOut, User, Wifi, WifiOff, Users } from 'lucide-react';
 
 function App() {
-  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'settings' | 'logs'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'settings' | 'logs' | 'distribution' | 'roster'>('roster');
   const [userEmail, setUserEmail] = useState<string>('');
   const [notifications, setNotifications] = useState<number>(0);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -45,6 +47,7 @@ function App() {
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'roster', label: 'Roster', icon: Users },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'logs', label: 'Logs', icon: Bell },
@@ -126,6 +129,7 @@ function App() {
             <ErrorBoundary>
               {tab === 'dashboard' && <Dashboard />}
               {tab === 'inventory' && <InventoryTable />}
+              {tab === 'roster' && <Roster />}
               {tab === 'settings' && <SettingsPanel />}
               {tab === 'logs' && <LogsPanel />}
             </ErrorBoundary>
