@@ -20,7 +20,7 @@ interface UserPreferences {
 
 export function SettingsPanel() {
   const [settings, setSettings] = useState<Settings>({ low_stock_threshold: 1 });
-  const [userPreferences, setUserPreferences] = useState<UserPreferences>({
+  const [, setUserPreferences] = useState<UserPreferences>({
     notification_preferences: {
       email: true,
       browser: true,
@@ -74,8 +74,7 @@ export function SettingsPanel() {
 
   const loadImprovements = async () => {
     try {
-      const suggestions = await suggestInventoryImprovements();
-      setImprovements(suggestions);
+      await suggestInventoryImprovements();
     } catch (error) {
       console.error('Failed to load improvements:', error);
     }
