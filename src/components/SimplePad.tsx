@@ -56,7 +56,7 @@ function SimplePadImpl({ rows, onApply, presetPlayer, defaultEdition = 'Icon', d
 
   const Button = ({ action, label, color }: { action: ActionType; label: string; color: 'red' | 'orange' | 'blue' | 'green' }) => (
     <button
-      className={`w-full py-5 rounded-2xl text-lg font-extrabold border shadow-sm active:scale-[0.99] transition
+      className={`w-full py-3 text-base sm:py-5 sm:text-lg rounded-2xl font-extrabold border shadow-sm active:scale-[0.99] transition
         ${color === 'red' ? 'text-white bg-red-600 border-red-700' : ''}
         ${color === 'orange' ? 'text-white bg-orange-600 border-orange-700' : ''}
         ${color === 'blue' ? 'text-white bg-blue-600 border-blue-700' : ''}
@@ -90,16 +90,16 @@ function SimplePadImpl({ rows, onApply, presetPlayer, defaultEdition = 'Icon', d
                 {players.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             )}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            <div className="flex gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
               {(['Icon','Statement','Association','City'] as JerseyEdition[]).map(ed => (
-                <button key={ed} className={`px-3 py-2 rounded-xl text-sm font-semibold border ${edition === ed ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setEdition(ed)}>
+                <button key={ed} className={`px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-xl font-semibold border ${edition === ed ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setEdition(ed)}>
                   {ed}
                 </button>
               ))}
             </div>
-            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            <div className="flex gap-1 sm:gap-2 overflow-x-auto no-scrollbar">
               {['46','48','50','52','54','56','58','60'].map(s => (
-                <button key={s} className={`px-3 py-2 rounded-xl text-sm font-semibold border ${size === s ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setSize(s)}>
+                <button key={s} className={`px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-xl font-semibold border ${size === s ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setSize(s)}>
                   {s}
                 </button>
               ))}
@@ -109,9 +109,9 @@ function SimplePadImpl({ rows, onApply, presetPlayer, defaultEdition = 'Icon', d
             <span className="text-sm text-gray-600">Qty</span>
             <input type="number" className="input col-span-3" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))} />
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1 sm:gap-2">
             {[1,2,3,5].map(n => (
-              <button key={n} className={`px-3 py-2 rounded-xl text-sm font-semibold border ${qty===n ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setQty(n)}>
+              <button key={n} className={`px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm rounded-xl font-semibold border ${qty===n ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-50 text-gray-700 border-gray-200'}`} onClick={() => setQty(n)}>
                 {n}
               </button>
             ))}
