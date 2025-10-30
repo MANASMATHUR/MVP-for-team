@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import type { JerseyItem } from '../../types';
-import { SimplePad } from '../../components/SimplePad';
-import { VoiceMic } from '../inventory/VoiceMic';
 import toast from 'react-hot-toast';
+import { VoiceMic } from '../inventory/VoiceMic';
 
 export function Roster() {
   const [rows, setRows] = useState<JerseyItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activePlayer, setActivePlayer] = useState<string | null>(null);
-  const [globalQuick, setGlobalQuick] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('jerseys').select('*');
       setRows((data || []) as JerseyItem[]);
-      setLoading(false);
     })();
   }, []);
 
@@ -29,8 +25,6 @@ export function Roster() {
     }
     return Array.from(byPlayer.entries()).map(([name, s]) => ({ name, ready: s.ready, total: s.total }));
   }, [rows]);
-
-  const readyCount = players.filter(p => p.ready > 0).length;
 
   const resolveTarget = (args: { player_name?: string; edition?: string; size?: string; quantity?: number }) => {
     const edition = args.edition || '';
@@ -49,138 +43,43 @@ export function Roster() {
     return match;
   };
 
-  const handleVoiceAction = async (command: any) => {
-    try {
-      const { data: userRes } = await supabase.auth.getUser();
-      const updatedBy = (userRes as any)?.user?.email ?? null;
-      const match = resolveTarget({ player_name: command.player_name, edition: command.edition, size: command.size, quantity: command.quantity });
-      if (!match) return false;
+  const [qty, setQty] = useState(1);
 
-      const qty = Math.max(1, command.quantity || command.target_quantity || 1);
-      const nowIso = new Date().toISOString();
-
-      if (command.type === 'add') {
-        await supabase.from('jerseys').update({ qty_inventory: match.qty_inventory + qty, updated_at: nowIso, updated_by: updatedBy }).eq('id', match.id);
-        toast.success(`Added ${qty} to ${match.player_name} ${match.edition}`);
-        return { success: true };
-      }
-      if (command.type === 'remove' || command.type === 'delete') {
-        await supabase.from('jerseys').update({ qty_inventory: Math.max(0, match.qty_inventory - qty), updated_at: nowIso, updated_by: updatedBy }).eq('id', match.id);
-        toast.success(`Removed ${qty} from ${match.player_name} ${match.edition}`);
-        return { success: true, info: { removed: qty } };
-      }
-      if (command.type === 'set') {
-        await supabase.from('jerseys').update({ qty_inventory: Math.max(0, command.target_quantity || 0), updated_at: nowIso, updated_by: updatedBy }).eq('id', match.id);
-        toast.success(`Set ${match.player_name} ${match.edition} to ${command.target_quantity || 0}`);
-        return { success: true, info: { setTo: command.target_quantity || 0 } };
-      }
-      if (command.type === 'turn_in') {
-        // If recipient mentions cleaner/laundry, move to laundry; else treat as giveaway
-        const recipient = (command.recipient || '').toString().toLowerCase();
-        if (recipient.includes('clean') || recipient.includes('laund')) {
-          const dec = Math.min(qty, match.qty_inventory);
-          const due = new Date();
-          due.setDate(due.getDate() + 2);
-          await supabase.from('jerseys').update({ qty_inventory: Math.max(0, match.qty_inventory - dec), qty_due_lva: match.qty_due_lva + dec, laundry_due_at: due.toISOString(), updated_at: nowIso, updated_by: updatedBy }).eq('id', match.id);
-          toast.success(`Sent ${dec} to laundry for ${match.player_name}`);
-        } else {
-          await supabase.from('jerseys').update({ qty_inventory: Math.max(0, match.qty_inventory - qty), updated_at: nowIso, updated_by: updatedBy }).eq('id', match.id);
-          await supabase.from('activity_logs').insert({ actor: updatedBy, action: 'giveaway', details: { id: match.id, qty, recipient: command.recipient || null } });
-          toast.success(`Recorded giveaway of ${qty}`);
-        }
-        return { success: true };
-      }
-      if (command.type === 'order') {
-        await supabase.from('activity_logs').insert({ actor: updatedBy, action: 'ordered', details: { id: match.id, qty, edition: match.edition, size: match.size } });
-        toast.success('Order recorded');
-        return { success: true };
-      }
-      return false;
-    } catch (e) {
-      toast.error('Voice action failed');
-      return false;
-    } finally {
-      const { data } = await supabase.from('jerseys').select('*');
-      setRows((data || []) as JerseyItem[]);
+  const updateRow = async (type: 'giveaway' | 'laundry' | 'receive', r: typeof rows[0], qty = 1) => {
+    if (!r) return;
+    let fields: any = {};
+    qty = Math.max(1, qty);
+    if (type === 'giveaway') {
+      fields.qty_inventory = Math.max(0, (r.qty_inventory ?? 0) - qty);
     }
-  };
-
-  const applyQuickAction = async (
-    action: 'given_away' | 'to_cleaners' | 'ordered' | 'received',
-    args: { player_name: string; edition: string; size: string; quantity: number }
-  ) => {
+    if (type === 'laundry') {
+      const dec = Math.min(qty, r.qty_inventory ?? 0);
+      fields.qty_inventory = Math.max(0, (r.qty_inventory ?? 0) - dec);
+      fields.qty_due_lva = (r.qty_due_lva ?? 0) + dec;
+    }
+    if (type === 'receive') {
+      fields.qty_inventory = (r.qty_inventory ?? 0) + qty;
+      fields.qty_due_lva = Math.max(0, (r.qty_due_lva ?? 0) - qty);
+    }
     try {
-      const { data: userRes } = await supabase.auth.getUser();
-      const updatedBy = (userRes as any)?.user?.email ?? null;
-      let match = resolveTarget(args);
-
-      // If no exact match, create a new row to avoid user confusion
-      if (!match) {
-        const insert = await supabase
-          .from('jerseys')
-          .insert({
-            player_name: args.player_name,
-            edition: args.edition,
-            size: args.size,
-            qty_inventory: 0,
-            qty_due_lva: 0,
-            updated_by: updatedBy,
-            updated_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
-        match = insert.data as any;
-      }
-
-      if (!match) {
-        toast.error('Item not found or could not be created');
-        return;
-      }
-
-      const qty = Math.max(1, Number(args.quantity) || 1);
-      const nowIso = new Date().toISOString();
-
-      if (action === 'given_away') {
-        await supabase
-          .from('jerseys')
-          .update({ qty_inventory: Math.max(0, match.qty_inventory - qty), updated_at: nowIso, updated_by: updatedBy })
-          .eq('id', match.id);
-        toast.success(`Recorded giveaway of ${qty}`);
-      } else if (action === 'to_cleaners') {
-        const dec = Math.min(qty, match.qty_inventory);
-        const due = new Date();
-        due.setDate(due.getDate() + 2);
-        await supabase
-          .from('jerseys')
-          .update({
-            qty_inventory: Math.max(0, match.qty_inventory - dec),
-            qty_due_lva: (match.qty_due_lva || 0) + dec,
-            laundry_due_at: due.toISOString(),
-            updated_at: nowIso,
-            updated_by: updatedBy,
-          })
-          .eq('id', match.id);
-        toast.success(`Sent ${dec} to laundry`);
-      } else if (action === 'ordered') {
-        await supabase.from('activity_logs').insert({ actor: updatedBy, action: 'ordered', details: { id: match.id, ...args } });
-        toast.success('Order recorded');
-      } else if (action === 'received') {
-        await supabase
-          .from('jerseys')
-          .update({ qty_inventory: match.qty_inventory + qty, updated_at: nowIso, updated_by: updatedBy })
-          .eq('id', match.id);
-        toast.success(`Received ${qty}`);
-      }
-
-      const { data } = await supabase.from('jerseys').select('*');
-      setRows((data || []) as JerseyItem[]);
+      const { data, error } = await supabase
+        .from('jerseys')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', r.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...fields } : row));
+      if (type === 'giveaway') toast.success(`Given away ${qty}!`);
+      if (type === 'laundry') toast.success(`Sent ${qty} to Laundry!`);
+      if (type === 'receive') toast.success(`Received ${qty}!`);
     } catch (e) {
-      toast.error('Action failed');
+      toast.error('Error updating inventory.');
     }
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen pt-3 pb-12">
+    <div className="bg-gray-50 min-h-screen pt-3 pb-28 relative">
       {/* Next Game BANNER */}
       <div className="mx-3 mb-3 rounded-2xl bg-gray-900 p-4 shadow flex flex-col gap-2 text-white">
         <div className="text-lg font-bold leading-snug">Next Game</div>
@@ -211,7 +110,7 @@ export function Roster() {
       {/* PLAYER CARDS */}
       <div className="space-y-4 px-2 pb-8">
         {players.map((p, i) => (
-          <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition p-4 flex items-center justify-between gap-4">
+          <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition p-4 flex items-center justify-between gap-4" onClick={() => setActivePlayer(p.name)}>
             <span className="flex items-center gap-4">
               <span className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl bg-blue-600 text-white shadow-inner">{p.name.match(/\d+/)?.[0] || ((p.name.charCodeAt(0) + i*2) % 99) }</span>
               <span className="flex flex-col">
@@ -226,6 +125,105 @@ export function Roster() {
             </span>
           </button>
         ))}
+      </div>
+      {activePlayer && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center">
+          <div className="card w-full max-w-lg rounded-t-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between bg-gray-900 text-white px-5 py-4">
+              <span className="text-lg font-extrabold">{activePlayer}</span>
+              <button onClick={() => setActivePlayer(null)} className="text-2xl px-2 py-1">×</button>
+            </div>
+            {/* Player subtitle */}
+            <div className="text-base px-5 pt-1 pb-3 text-gray-500 font-medium">{rows.filter(r => r.player_name === activePlayer).length} Jersey Styles</div>
+            {/* Jersey Styles, for each row with player_name === activePlayer */}
+            <div className="space-y-6 px-3 pb-4">
+              {rows.filter(r => r.player_name === activePlayer).map((r, idx) => (
+                <div key={r.id || idx} className="rounded-2xl bg-white shadow-md p-4 flex flex-col gap-3">
+                  {/* Style/edition title */}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-lg font-bold text-gray-900">{r.edition} Edition</span>
+                    <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-3 py-1 text-xs font-bold shadow">{r.size}</span>
+                  </div>
+                  {/* Pills: Locker, Closet, Laundry, Min/Proj */}
+                  <div className="flex flex-wrap gap-2 justify-between mt-1">
+                    <span className="inline-flex items-center font-bold bg-blue-50 border border-blue-300 rounded-full px-3 py-1 text-xs">Locker: {r.qty_locker ?? 0} / 3</span>
+                    <span className="inline-flex items-center font-bold bg-yellow-50 border border-yellow-300 rounded-full px-3 py-1 text-xs">Closet: {r.qty_closet ?? 0} / 5</span>
+                    <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Min Required: <span className="font-bold ml-1">2</span></span>
+                    <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Projected: <span className="font-bold ml-1">7</span></span>
+                  </div>
+                  <div className="flex gap-3 mt-1">
+                    <span className="inline-flex items-center font-bold bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-xs">Laundry: {r.qty_due_lva ?? 0}</span>
+                    <span className="inline-flex items-center font-bold bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs">In Transit: 0</span>
+                  </div>
+                  {/* Quantity Selector + Inline MIC */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-700 font-medium">Qty</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={r.qty_inventory ?? 100}
+                        value={qty}
+                        onChange={e => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                        className="inline-block w-16 rounded-lg border border-gray-300 text-base px-2 py-1 text-center font-bold ring-1 ring-inset ring-blue-200 bg-gray-50 focus:outline-none focus:ring-blue-400 focus:border-blue-400"
+                        style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }}
+                      />
+                      {[1,2,3,5].map(n => (
+                        <button key={n} className={`px-3 py-1.5 text-xs rounded-xl font-semibold border ${qty===n ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50'}`} onClick={() => setQty(n)}>{n}</button>
+                      ))}
+                    </div>
+                    <div className="ml-auto">
+                      <VoiceMic
+                        rows={[r]}
+                        onAction={async (command) => {
+                          let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
+                          if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                          if (command.type === 'laundry_return') type = 'receive';
+                          if (command.type === 'add') type = 'receive';
+                          if (command.type === 'set' || command.type === 'order') type = undefined;
+                          q = Number(command.quantity || command.target_quantity || qty || 1);
+                          if (!type) return { success: false };
+                          await updateRow(type, r, q);
+                          return { success: true };
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {/* Action Buttons */}
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-red-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('giveaway', r, qty)}>Give Away</button>
+                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-blue-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('laundry', r, qty)}>To Laundry</button>
+                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-green-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('receive', r, qty)}>Receive</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Large Centered Glassmorphic MIC - always visible (mobile + desktop), above all */}
+      <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center items-end pb-4">
+        <div className="w-full max-w-xl mx-auto px-4">
+          <div className="rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
+            <VoiceMic
+              rows={rows}
+              onAction={async (command) => {
+                let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
+                if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                if (command.type === 'laundry_return') type = 'receive';
+                if (command.type === 'add') type = 'receive';
+                if (command.type === 'set' || command.type === 'order') type = undefined;
+                q = Number(command.quantity || command.target_quantity || 1);
+                const target = resolveTarget(command);
+                if (!type || !target) return { success: false };
+                await updateRow(type, target, q);
+                return { success: true };
+              }}
+              large={true}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import { analyzeInventory, buildReorderEmailDraft, buildReorderEmailDraftAI } fr
 import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
 import toast from 'react-hot-toast';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import type { JerseyItem } from '../../types';
+import { VoiceMic } from '../inventory/VoiceMic';
 
 interface DashboardStats {
   totalJerseys: number;
@@ -165,6 +167,7 @@ export function Dashboard() {
     efficiencyScore: 0,
   });
   const [editionData, setEditionData] = useState<EditionData[]>([]);
+  const [rows, setRows] = useState<JerseyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -178,25 +181,69 @@ export function Dashboard() {
     loadDashboardData();
   }, []);
 
+  const resolveTarget = (args: { player_name?: string; edition?: string; size?: string; quantity?: number }) => {
+    const edition = args.edition || '';
+    const size = (args.size || '').trim();
+    let match: JerseyItem | undefined;
+    if (args.player_name) {
+      const player = (args.player_name as string).toLowerCase();
+      match = rows.find(r => r.player_name.toLowerCase() === player && (!edition || r.edition.toLowerCase() === edition.toLowerCase()) && (!size || r.size === size));
+    }
+    if (!match) {
+      const candidates = rows.filter(r => (!edition || r.edition.toLowerCase() === edition.toLowerCase()) && (!size || r.size === size));
+      if (candidates.length > 0) {
+        match = candidates.sort((a, b) => b.qty_inventory - a.qty_inventory)[0];
+      }
+    }
+    return match;
+  };
+
+  const updateRow = async (type: 'giveaway' | 'laundry' | 'receive', r: JerseyItem, qty = 1) => {
+    if (!r) return { success: false };
+    let fields: any = {};
+    qty = Math.max(1, qty);
+    if (type === 'giveaway') {
+      fields.qty_inventory = Math.max(0, (r.qty_inventory ?? 0) - qty);
+    }
+    if (type === 'laundry') {
+      const dec = Math.min(qty, r.qty_inventory ?? 0);
+      fields.qty_inventory = Math.max(0, (r.qty_inventory ?? 0) - dec);
+      fields.qty_due_lva = (r.qty_due_lva ?? 0) + dec;
+    }
+    if (type === 'receive') {
+      fields.qty_inventory = (r.qty_inventory ?? 0) + qty;
+      fields.qty_due_lva = Math.max(0, (r.qty_due_lva ?? 0) - qty);
+    }
+    try {
+      const { error } = await supabase
+        .from('jerseys')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', r.id);
+      if (error) throw error;
+      setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...fields } : row));
+      if (type === 'giveaway') toast.success(`All set! Gave away ${qty} 🧾`);
+      if (type === 'laundry') toast.success(`Sent ${qty} to laundry 🧺`);
+      if (type === 'receive') toast.success(`Received ${qty} ✅`);
+      return { success: true };
+    } catch (e) {
+      toast.error('😅 Whoops, try again?');
+      return { success: false };
+    }
+  };
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      
-      // Load jersey statistics
       const { data: jerseys } = await supabase
         .from('jerseys')
         .select('*');
-
       if (jerseys) {
+        setRows(jerseys as JerseyItem[]);
         const totalJerseys = jerseys.length;
         const lowStockItems = jerseys.filter(j => j.qty_inventory <= 1).length;
-        const totalValue = jerseys.reduce((sum, j) => sum + (j.qty_inventory * 75), 0); // Assuming $75 per jersey
-        
-        // Calculate additional stats
+        const totalValue = jerseys.reduce((sum, j) => sum + (j.qty_inventory * 75), 0);
         const uniquePlayers = new Set(jerseys.map(j => j.player_name)).size;
         const avgStockPerPlayer = totalJerseys / uniquePlayers;
-        
-        // Find most popular edition
         const editionCounts = jerseys.reduce((acc: Record<string, number>, jersey: any) => {
           acc[jersey.edition] = (acc[jersey.edition] || 0) + 1;
           return acc;
@@ -204,49 +251,36 @@ export function Dashboard() {
         const mostPopularEdition = Object.entries(editionCounts).reduce((a, b) => 
           editionCounts[a[0]] > editionCounts[b[0]] ? a : b
         )[0];
-        
-        // Calculate efficiency score (0-100)
         const efficiencyScore = Math.round(
           Math.max(0, 100 - (lowStockItems / totalJerseys) * 100)
         );
-        
         setStats({
           totalJerseys,
           lowStockItems,
           totalValue,
-          recentActivity: 0, // Will be updated with activity logs
+          recentActivity: 0,
           totalPlayers: uniquePlayers,
           avgStockPerPlayer: Math.round(avgStockPerPlayer * 10) / 10,
           mostPopularEdition,
           efficiencyScore,
         });
-
-        // Calculate edition distribution (reuse the counts we already calculated)
-
         const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
         const editionData = Object.entries(editionCounts).map(([edition, count], index) => ({
           edition,
           count: Number(count),
           color: colors[index % colors.length],
         }));
-
         setEditionData(editionData);
       }
-
-      // Recent calls removed for enterprise build
-
-      // Load recent activity
       const { data: activityLogs } = await supabase
         .from('activity_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10);
-
       setStats(prev => ({
         ...prev,
         recentActivity: activityLogs?.length || 0,
       }));
-
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -278,7 +312,7 @@ export function Dashboard() {
     color: string;
     subtitle?: string;
   }) => (
-    <div className="card p-6 transition-transform hover:-translate-y-0.5">
+    <div className="card p-6 transition-transform hover:-translate-y-0.5 stat-card">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>
@@ -308,9 +342,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="gradient-header flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600">Overview of your inventory management system</p>
@@ -348,7 +382,8 @@ export function Dashboard() {
         />
         <StatCard
           title="Efficiency Score"
-          value={`${stats.efficiencyScore}%`}
+          value={`${stats.efficiencyScore}%`
+          }
           icon={Zap}
           color="bg-purple-500"
           subtitle="Stock optimization"
@@ -529,6 +564,29 @@ export function Dashboard() {
             <CheckCircle className="h-4 w-4" />
             Copy Report
           </button>
+        </div>
+      </div>
+
+      {/* Large Centered MIC Dock */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center items-end pb-4">
+        <div className="w-full max-w-xl mx-auto px-4">
+          <div className="rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
+            <VoiceMic
+              rows={rows}
+              onAction={async (command) => {
+                let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
+                if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                if (command.type === 'laundry_return') type = 'receive';
+                if (command.type === 'add') type = 'receive';
+                if (command.type === 'set' || command.type === 'order') type = undefined;
+                q = Number(command.quantity || command.target_quantity || 1);
+                const target = resolveTarget(command as any);
+                if (!type || !target) return { success: false };
+                return await updateRow(type, target, q);
+              }}
+              large={true}
+            />
+          </div>
         </div>
       </div>
     </div>

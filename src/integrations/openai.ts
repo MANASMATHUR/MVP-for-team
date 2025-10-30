@@ -607,12 +607,6 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
     return { type: 'unknown' };
   }
   try {
-    const inventoryContext = currentInventory.map(item => ({
-      player: item.player_name,
-      edition: item.edition,
-      size: item.size,
-      quantity: item.qty_inventory
-    }));
     const systemPrompt = `You are an extremely practical, detail-oriented AI assistant helping an NBA equipment manager track player jerseys in real time and under pressure. Your job is:
 
 - Listen to very casual, conversational, even noisy English describing events. The input could include multiple unrelated sentences, dictation, notes, or informal/ungrammatical language.

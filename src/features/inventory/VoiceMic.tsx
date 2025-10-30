@@ -131,169 +131,159 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     }, 100);
   };
 
-  // Removed auto-greeting to avoid feedback loops
+  // Add regex for obvious chit-chat/greetings detection
+  const IS_GREETING = /^(hi+|hello+|hey+|how are you+|good morning|good afternoon|good evening|what's up|wassup|sup|yo+|greetings)[!. ]*$/i;
 
-  const getConfirmationMessage = (command: VoiceCommand, info?: ActionResultInfo) => {
-    switch (command.type) {
-      case 'add':
-        return `Ok, added ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} to inventory.`;
-      case 'remove':
-        return `Ok, removed ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
-      case 'set':
-        return `Ok, set ${command.player_name || ''} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''} to ${command.target_quantity || 0} in inventory.`;
-      case 'delete':
-        return `Ok, removed ${typeof info?.removed === 'number' ? info.removed : (command.quantity || 0)} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
-      case 'order':
-        return `Ok, order placed for ${command.quantity || 0} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''}.`;
-      case 'turn_in':
-        return `Ok, turned in ${command.quantity || 0} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.recipient ? ` to ${command.recipient}` : ''}.`;
-      default:
-        return "Ok, command executed successfully.";
-    }
-  };
-
-  // removed unused isGeneralChat utility
-
-  const handleGeneralConversation = async (text: string): Promise<string> => {
-    // Provide minimal app context so replies can reference role succinctly
-    const reply = await getConversationalReply(text, {
-      context: { feature: 'inventory', lastCommand },
-    });
-    return reply;
-  };
-
-  useEffect(() => {
-    const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
-    const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
-    const hasSpeechSynthesis = typeof speechSynthesis !== 'undefined';
-    
-    const isSecureContext = window.isSecureContext || location.protocol === 'https:';
-    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    const isSecure = isSecureContext || isLocalhost;
-    
-    if (!isSecure) {
-      setSupported(false);
+  // Replace the hasGreeted logic and on first tap, or if transcript is IS_GREETING, greet user conversationally ONLY (no inventory action)
+  const startListening = async () => {
+    if (listening) return;
+    // One-time friendly greeting on first button click (no recording during greeting)
+    if (!hasGreeted) {
+      setHasGreeted(true);
+      speak("Hello! I'm your inventory management system. I can help you give away, receive, or return jerseys, send items to laundry, and update inventory. Just ask me what to do!");
+      setMessages(prev => [...prev, { role: 'assistant', content: "Hello! I'm your inventory management system. I can help you give away, receive, or return jerseys, send items to laundry, order new ones, and more. Just say a command like 'give away one city jersey' or 'return two to laundry'. How can I help?" }].slice(-10));
       return;
     }
     
-    if (!hasMediaRecorder && !hasSpeechRecognition) {
-      setSupported(false);
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+    if (!apiKey) {
+      setApiError('OpenAI API credits exhausted. Using browser speech recognition.');
+      startBrowserSpeechRecognition();
       return;
     }
     
-    if (hasSpeechSynthesis) {
-      setSpeechSynthesis(window.speechSynthesis);
+    if (apiError) {
+      startBrowserSpeechRecognition();
+      return;
     }
     
-    setSupported(true);
-  }, []);
+    setApiError(null);
+    
+    if (typeof MediaRecorder !== 'undefined') {
+      try {
+        const audioConstraints: MediaTrackConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        
+        if (navigator.userAgent.includes('Mobile') || navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
+          // For mobile, use simpler constraints
+        } else {
+          audioConstraints.sampleRate = 44100;
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: audioConstraints
+        });
+        
+        const supportedMimeTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4',
+          'audio/mp4;codecs=mp4a.40.2',
+          'audio/ogg;codecs=opus',
+          'audio/wav'
+        ];
+        
+        let selectedMimeType = 'audio/webm';
+        for (const mimeType of supportedMimeTypes) {
+          if (MediaRecorder.isTypeSupported(mimeType)) {
+            selectedMimeType = mimeType;
+            break;
+          }
+        }
+        
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
 
-  const startBrowserSpeechRecognition = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      setProcessingStep('error');
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
-        alert('Speech recognition is not supported on this mobile browser. Please:\n1. Use Chrome or Safari on mobile\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
-      } else {
-        alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
-      }
-      return;
-    }
-    
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = true;
-      recognition.continuous = false;
-      recognition.maxAlternatives = 1;
-      
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
-        recognition.continuous = false;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 3;
-      }
-      
-      recognition.onstart = () => {
-        setListening(true);
-        setProcessingStep('recording');
-        setTranscript('');
-        playBeep();
-        // Barge-in: stop TTS if it is speaking when user starts talking
+        // Barge-in: stop any ongoing TTS when mic starts
         if (window.speechSynthesis?.speaking) {
           window.speechSynthesis.cancel();
         }
-      };
-      
-      recognition.onresult = async (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
+
+        // Removed VAD: mic will only stop when user presses the button
         
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          setProcessingStep('transcribing');
+          const audioBlob = new Blob(audioChunksRef.current, { type: selectedMimeType });
           
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
+          try {
+            const transcript = await transcribeAudio(audioBlob);
+            setTranscript(transcript);
+            // Show in transcript list as user message for chat feel
+            setMessages(prev => [...prev, { role: 'user' as const, content: transcript }].slice(-10));
+            await processVoiceCommand(transcript);
+          } catch (error) {
+            setProcessingStep('error');
+            
+            if (error instanceof Error) {
+              if (error.message.includes('insufficient credits') || error.message.includes('payment required')) {
+                setApiError('OpenAI API credits exhausted. Using browser speech recognition.');
+                stream.getTracks().forEach(track => track.stop());
+                setListening(false);
+                setProcessingStep('idle');
+                
+                setTimeout(() => {
+                  startBrowserSpeechRecognition();
+                }, 300);
+                return;
+              }
+            }
+            
+            setTimeout(() => setProcessingStep('idle'), 3000);
           }
-        }
-        
-        if (interimTranscript) {
-          setTranscript(interimTranscript);
-        }
-        
-        if (finalTranscript) {
-          setTranscript(finalTranscript);
-          // Echo guard: ignore if it's exactly the last assistant reply
-          if (lastAssistantReplyRef.current && finalTranscript.trim() === lastAssistantReplyRef.current.trim()) {
-            setProcessingStep('idle');
-            return;
+          
+          // No VAD cleanup required
+          stream.getTracks().forEach(track => track.stop());
+          setListening(false);
+          if (locked) {
+            setTimeout(() => {
+              if (!listening && !isProcessing) startBrowserSpeechRecognition();
+            }, 300);
           }
-          await processVoiceCommand(finalTranscript);
-        }
-      };
-      
-      recognition.onend = () => {
-        setListening(false);
-        setProcessingStep('idle');
-        if (locked) {
-          // auto-restart after a short pause for noisy environments
-          setTimeout(() => {
-            if (!listening) startBrowserSpeechRecognition();
-          }, 300);
-        }
-      };
-      
-      recognition.onerror = (event: any) => {
-        setListening(false);
+        };
+        
+        // Reset chat memory on first listen of a session if user long-paused before
+        // (leave as no-op for now; expose a dedicated reset control elsewhere if needed)
+        mediaRecorder.start();
+        setListening(true);
+        setProcessingStep('recording');
+        playBeep();
+        // Removed mobile greeting backup to prevent echo/repetition
+        
+      } catch (error) {
         setProcessingStep('error');
         
-        if (event.error === 'not-allowed') {
-          alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
-        } else if (event.error === 'no-speech') {
-          setTimeout(() => setProcessingStep('idle'), 1000);
-        } else if (event.error === 'audio-capture') {
-          alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
-        } else if (event.error === 'network') {
-          alert('Network error. Please check your internet connection and try again.');
-        } else if (event.error === 'service-not-allowed') {
-          alert('Speech recognition service not allowed. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
-        } else {
-          setTimeout(() => setProcessingStep('idle'), 2000);
+        if (error instanceof Error) {
+          if (error.name === 'NotAllowedError') {
+            alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+          } else if (error.name === 'NotFoundError') {
+            alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
+          } else if (error.name === 'NotSupportedError') {
+            alert('Audio recording not supported on this device. Please:\n1. Use a modern browser (Chrome, Safari, Firefox)\n2. Make sure you\'re using HTTPS\n3. Try on a different device');
+          } else if (error.name === 'SecurityError') {
+            alert('Security error: This feature requires HTTPS. Please:\n1. Make sure you\'re using https:// in the URL\n2. Try refreshing the page\n3. Contact support if the issue persists');
+          }
         }
-      };
-      
-      recognition.start();
-    } catch (error) {
-      setProcessingStep('error');
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
-        alert('Speech recognition failed on mobile. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page\n4. Check microphone permissions');
+        
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+          setTimeout(() => {
+            startBrowserSpeechRecognition();
+          }, 1000);
+        }
       }
-    }
+      } else {
+        startBrowserSpeechRecognition();
+      }
   };
 
   // After any speech command, success or fail, reset listening and processingStep to idle
@@ -303,68 +293,87 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     setProcessingStep('interpreting');
     try {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-      let commands: VoiceCommand | VoiceCommand[];
+      let commands, gptReply;
       if (apiKey) {
-        commands = await interpretVoiceCommandWithAI(transcript, rows);
-        if (!commands || (Array.isArray(commands) && commands.every(cmd => cmd.type === 'unknown')) || (!Array.isArray(commands) && commands.type === 'unknown')) {
-          commands = interpretVoiceCommandLocal(transcript);
+        // Interpret & get chat reply (new: get both from LLM)
+        const result = await interpretVoiceCommandWithAI(transcript, rows, { returnChat: true }); // If API supports both
+        // If your interpretVoiceCommandWithAI just returns actions, call GPT chat separately for non-inventory utterances
+        if (Array.isArray(result) && result[0]?.type && result[0]?.type !== 'unknown') {
+          commands = result;
+        } else if (result?.type && result.type !== 'unknown') {
+          commands = [result];
+        } else {
+          // No actionable inventory, get pure chat reply
+          gptReply = await getConversationalReply(transcript); // fallback or always
         }
       } else {
+        // Fallback to local regex
         commands = interpretVoiceCommandLocal(transcript);
       }
-
-      // If multiple actions, always run all
-      let allSucceeded = false;
-      let confirmations: string[] = [];
-      if (Array.isArray(commands)) {
-        allSucceeded = false;
+      // Main case: actionable command(s)
+      if (commands && Array.isArray(commands) && commands.length) {
+        setProcessingStep('executing');
+        let confirmations = [];
+        let allSucceeded = false;
         for (const command of commands) {
           setLastCommand(command);
-          setProcessingStep('executing');
           const actionResult = await Promise.resolve(onAction(command));
           const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
-          const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
+          const info = typeof actionResult === 'object' ? actionResult.info : undefined;
           if (succeeded) {
             confirmations.push(getConfirmationMessage(command, info));
           }
           allSucceeded = allSucceeded || succeeded;
         }
-      } else {
-        setLastCommand(commands);
-        setProcessingStep('executing');
-        const actionResult = await Promise.resolve(onAction(commands));
-        const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
-        const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
-        if (succeeded) {
-          confirmations.push(getConfirmationMessage(commands, info));
+        if (confirmations.length) {
+          for (const msg of confirmations) speak(msg); // TTS
+          setMessages(prev => [...prev, { role: 'assistant', content: confirmations.join(' ') }].slice(-10));
+          setProcessingStep('success');
+        } else {
+          setProcessingStep('error');
         }
-        allSucceeded = succeeded;
-      }
-      if (confirmations.length) {
+      } else if (gptReply) {
+        // Conversational reply (small talk, general knowledge, etc)
+        speak(gptReply);
+        setMessages(prev => [...prev, { role: 'assistant', content: gptReply }].slice(-10));
         setProcessingStep('success');
-        for (const msg of confirmations) {
-          speak(msg);
-        }
       } else {
-        setProcessingStep('error');
-        if (navigator.vibrate) {
-          navigator.vibrate([50, 50, 50]);
+        // fallback local for safety
+        const localCommand = interpretVoiceCommandLocal(transcript);
+        if (localCommand && localCommand.type !== 'unknown') {
+          setLastCommand(localCommand);
+          setProcessingStep('executing');
+          const actionResult = await Promise.resolve(onAction(localCommand));
+          const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
+          const info = typeof actionResult === 'object' ? actionResult.info : undefined;
+          if (succeeded) {
+            const msg = getConfirmationMessage(localCommand, info);
+            speak(msg);
+            setMessages(prev => [...prev, { role: 'assistant', content: msg }].slice(-10));
+            setProcessingStep('success');
+          } else {
+            setProcessingStep('error');
+          }
+        } else {
+          speak("I'm sorry, I didn't quite catch that. Try asking anything about inventory or just chat with me!");
+          setMessages(prev => [...prev, { role: 'assistant', content: "I'm here to help—try asking about jerseys, or feel free to chat!" }].slice(-10));
+          setProcessingStep('idle');
         }
       }
       setTimeout(() => {
         setProcessingStep('idle');
         setLastCommand(null);
-        setListening(false); // Ensure MIC always resets
-      }, 3000);
+        setListening(false);
+      }, 2500);
     } catch (error) {
       setProcessingStep('error');
       setTimeout(() => {
         setProcessingStep('idle');
-        setListening(false); // Always reset after error too
+        setListening(false);
       }, 2000);
     } finally {
       setIsProcessing(false);
-      setListening(false); // Always cleanup on finally
+      setListening(false);
       setTranscript('');
     }
   };
@@ -554,155 +563,159 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     return { type: 'unknown' };
   };
 
-  const startListening = async () => {
-    if (listening) return;
-    
-    // One-time friendly greeting on first button click (no recording during greeting)
-    if (!hasGreeted) {
-      setHasGreeted(true);
-      speak("I'm listening. Say things like 'send two association jerseys to cleaners' or 'give away three city jerseys'.");
-      return;
+  const getConfirmationMessage = (command: VoiceCommand, info?: ActionResultInfo) => {
+    switch (command.type) {
+      case 'add':
+        return `Ok, added ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} to inventory.`;
+      case 'remove':
+        return `Ok, removed ${command.quantity || 0} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
+      case 'set':
+        return `Ok, set ${command.player_name || ''} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''} to ${command.target_quantity || 0} in inventory.`;
+      case 'delete':
+        return `Ok, removed ${typeof info?.removed === 'number' ? info.removed : (command.quantity || 0)} ${command.edition || ''} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.size ? ` size ${command.size}` : ''} from inventory.`;
+      case 'order':
+        return `Ok, order placed for ${command.quantity || 0} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''}.`;
+      case 'turn_in':
+        return `Ok, turned in ${command.quantity || 0} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.recipient ? ` to ${command.recipient}` : ''}.`;
+      default:
+        return "Ok, command executed successfully.";
     }
-    
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    if (!apiKey) {
-      setApiError('OpenAI API credits exhausted. Using browser speech recognition.');
-      startBrowserSpeechRecognition();
-      return;
-    }
-    
-    if (apiError) {
-      startBrowserSpeechRecognition();
-      return;
-    }
-    
-    setApiError(null);
-    
-    if (typeof MediaRecorder !== 'undefined') {
-      try {
-        const audioConstraints: MediaTrackConstraints = {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        };
-        
-        if (navigator.userAgent.includes('Mobile') || navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
-          // For mobile, use simpler constraints
-        } else {
-          audioConstraints.sampleRate = 44100;
-        }
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: audioConstraints
-        });
-        
-        const supportedMimeTypes = [
-          'audio/webm;codecs=opus',
-          'audio/webm',
-          'audio/mp4',
-          'audio/mp4;codecs=mp4a.40.2',
-          'audio/ogg;codecs=opus',
-          'audio/wav'
-        ];
-        
-        let selectedMimeType = 'audio/webm';
-        for (const mimeType of supportedMimeTypes) {
-          if (MediaRecorder.isTypeSupported(mimeType)) {
-            selectedMimeType = mimeType;
-            break;
-          }
-        }
-        
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+  };
 
-        // Barge-in: stop any ongoing TTS when mic starts
+  // removed unused isGeneralChat utility
+
+  useEffect(() => {
+    const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
+    const hasSpeechRecognition = typeof (window as any).SpeechRecognition !== 'undefined' || typeof (window as any).webkitSpeechRecognition !== 'undefined';
+    const hasSpeechSynthesis = typeof speechSynthesis !== 'undefined';
+    
+    const isSecureContext = window.isSecureContext || location.protocol === 'https:';
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isSecure = isSecureContext || isLocalhost;
+    
+    if (!isSecure) {
+      setSupported(false);
+      return;
+    }
+    
+    if (!hasMediaRecorder && !hasSpeechRecognition) {
+      setSupported(false);
+      return;
+    }
+    
+    if (hasSpeechSynthesis) {
+      setSpeechSynthesis(window.speechSynthesis);
+    }
+    
+    setSupported(true);
+  }, []);
+
+  const startBrowserSpeechRecognition = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      setProcessingStep('error');
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        alert('Speech recognition is not supported on this mobile browser. Please:\n1. Use Chrome or Safari on mobile\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+      } else {
+        alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      }
+      return;
+    }
+    
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 1;
+      
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 3;
+      }
+      
+      recognition.onstart = () => {
+        setListening(true);
+        setProcessingStep('recording');
+        setTranscript('');
+        playBeep();
+        // Barge-in: stop TTS if it is speaking when user starts talking
         if (window.speechSynthesis?.speaking) {
           window.speechSynthesis.cancel();
         }
-
-        // Removed VAD: mic will only stop when user presses the button
+      };
+      
+      recognition.onresult = async (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
         
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-        
-        mediaRecorder.onstop = async () => {
-          setProcessingStep('transcribing');
-          const audioBlob = new Blob(audioChunksRef.current, { type: selectedMimeType });
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
           
-          try {
-            const transcript = await transcribeAudio(audioBlob);
-            setTranscript(transcript);
-            // Show in transcript list as user message for chat feel
-            setMessages(prev => [...prev, { role: 'user' as const, content: transcript }].slice(-10));
-            await processVoiceCommand(transcript);
-          } catch (error) {
-            setProcessingStep('error');
-            
-            if (error instanceof Error) {
-              if (error.message.includes('insufficient credits') || error.message.includes('payment required')) {
-                setApiError('OpenAI API credits exhausted. Using browser speech recognition.');
-                stream.getTracks().forEach(track => track.stop());
-                setListening(false);
-                setProcessingStep('idle');
-                
-                setTimeout(() => {
-                  startBrowserSpeechRecognition();
-                }, 300);
-                return;
-              }
-            }
-            
-            setTimeout(() => setProcessingStep('idle'), 3000);
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
           }
-          
-          // No VAD cleanup required
-          stream.getTracks().forEach(track => track.stop());
-          setListening(false);
-          if (locked) {
-            setTimeout(() => {
-              if (!listening && !isProcessing) startBrowserSpeechRecognition();
-            }, 300);
+        }
+        
+        if (interimTranscript) {
+          setTranscript(interimTranscript);
+        }
+        
+        if (finalTranscript) {
+          setTranscript(finalTranscript);
+          // Echo guard: ignore if it's exactly the last assistant reply
+          if (lastAssistantReplyRef.current && finalTranscript.trim() === lastAssistantReplyRef.current.trim()) {
+            setProcessingStep('idle');
+            return;
           }
-        };
-        
-        // Reset chat memory on first listen of a session if user long-paused before
-        // (leave as no-op for now; expose a dedicated reset control elsewhere if needed)
-        mediaRecorder.start();
-        setListening(true);
-        setProcessingStep('recording');
-        playBeep();
-        // Removed mobile greeting backup to prevent echo/repetition
-        
-      } catch (error) {
+          await processVoiceCommand(finalTranscript);
+        }
+      };
+      
+      recognition.onend = () => {
+        setListening(false);
+        setProcessingStep('idle');
+        if (locked) {
+          // auto-restart after a short pause for noisy environments
+          setTimeout(() => {
+            if (!listening) startBrowserSpeechRecognition();
+          }, 300);
+        }
+      };
+      
+      recognition.onerror = (event: any) => {
+        setListening(false);
         setProcessingStep('error');
         
-        if (error instanceof Error) {
-          if (error.name === 'NotAllowedError') {
-            alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
-          } else if (error.name === 'NotFoundError') {
-            alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
-          } else if (error.name === 'NotSupportedError') {
-            alert('Audio recording not supported on this device. Please:\n1. Use a modern browser (Chrome, Safari, Firefox)\n2. Make sure you\'re using HTTPS\n3. Try on a different device');
-          } else if (error.name === 'SecurityError') {
-            alert('Security error: This feature requires HTTPS. Please:\n1. Make sure you\'re using https:// in the URL\n2. Try refreshing the page\n3. Contact support if the issue persists');
-          }
+        if (event.error === 'not-allowed') {
+          alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+        } else if (event.error === 'no-speech') {
+          setTimeout(() => setProcessingStep('idle'), 1000);
+        } else if (event.error === 'audio-capture') {
+          alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
+        } else if (event.error === 'network') {
+          alert('Network error. Please check your internet connection and try again.');
+        } else if (event.error === 'service-not-allowed') {
+          alert('Speech recognition service not allowed. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+        } else {
+          setTimeout(() => setProcessingStep('idle'), 2000);
         }
-        
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        if (isMobile) {
-          setTimeout(() => {
-            startBrowserSpeechRecognition();
-          }, 1000);
-        }
+      };
+      
+      recognition.start();
+    } catch (error) {
+      setProcessingStep('error');
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
+        alert('Speech recognition failed on mobile. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page\n4. Check microphone permissions');
       }
-      } else {
-        startBrowserSpeechRecognition();
-      }
+    }
   };
 
   // Also ensure stopListening() always sets step to idle
@@ -827,7 +840,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         <div className={`flex-col gap-1 text-xs ${large ? 'flex max-w-full' : 'hidden md:flex max-w-80'}`}>
           {messages.slice(-4).map((m, idx) => (
             <div key={idx} className={`transcript-bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
-              <span className="who">{m.role === 'user' ? 'You' : 'AI'}:</span>
               <span className="text">{m.content}</span>
             </div>
           ))}
@@ -850,8 +862,8 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         </div>
       )}
       
-      <div className="text-xs text-gray-500 hidden md:block">
-        Try: "Add 5 Jalen Green Icon size 48" · "Remove 3 Statement jerseys" · "Set Jalen Green Icon to 10" · "Delete all City jerseys"
+      <div className="text-xs text-gray-500 text-center max-w-xs mx-auto pt-1">
+        You can say things like: "Send two jerseys to laundry" or "Give away three city jerseys".
       </div>
     </div>
   );
