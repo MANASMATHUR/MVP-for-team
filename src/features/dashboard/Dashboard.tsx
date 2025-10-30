@@ -575,7 +575,7 @@ export function Dashboard() {
               rows={rows}
               onAction={async (command) => {
                 let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
-                if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
                 if (command.type === 'laundry_return') type = 'receive';
                 if (command.type === 'add') type = 'receive';
                 if (command.type === 'set' || command.type === 'order') type = undefined;
