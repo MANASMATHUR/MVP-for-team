@@ -601,12 +601,11 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   }
 }
 
-export async function interpretVoiceCommandWithAI(transcript: string, currentInventory: any[]): Promise<VoiceCommand> {
+export async function interpretVoiceCommandWithAI(transcript: string, currentInventory: any[]): Promise<VoiceCommand | VoiceCommand[]> {
   const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
   if (!key) {
     return { type: 'unknown' };
   }
-
   try {
     const inventoryContext = currentInventory.map(item => ({
       player: item.player_name,
@@ -614,7 +613,43 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
       size: item.size,
       quantity: item.qty_inventory
     }));
+    const systemPrompt = `You are an extremely practical, detail-oriented AI assistant helping an NBA equipment manager track player jerseys in real time and under pressure. Your job is:
 
+- Listen to very casual, conversational, even noisy English describing events. The input could include multiple unrelated sentences, dictation, notes, or informal/ungrammatical language.
+- Extract ALL inventory actions described, even if mixed with small talk or vague references.
+- Always output a JSON array describing each action as a structured object.
+- Focus on these top 4 events:
+  1. Reduce inventory because jersey was given away (to player, fan, staff, friend, etc)
+  2. Reduce inventory because jersey was sent to cleaners/laundry (these will be unavailable 2-3 days)
+  3. Add inventory because an order was placed (track vendor if possible, e.g. Nike, New Era)
+  4. Add inventory because item was received (either from an order, or just back from laundry)
+- Include relevant information:
+  - Player name (if any)
+  - Edition/style (Icon, Association, Statement, City, Limited, etc)
+  - Size (if spoken)
+  - Quantity
+  - Vendor (if available)
+  - Where items go (locker, closet, storage, etc)
+- Track constraints: Each player can have only 2-3 jerseys in a locker and 3-5 in the closet, so never assume infinite space or stock.
+
+Examples:
+- "Hey I just gave 2 city jerseys to a fan and sent 3 association jerseys to laundry for Jalen Green, also add 1 limited jersey for Kevin that arrived from Nike."
+Should reply with:
+[
+  {"type": "turn_in", "edition": "City", "quantity": 2, "recipient":"Fan"},
+  {"type":"turn_in", "edition": "Association", "quantity": 3, "player_name":"Jalen Green", "recipient":"Laundry"},
+  {"type":"add", "edition":"Limited", "quantity":1, "player_name":"Kevin", "vendor":"Nike", "notes":"received"}
+]
+
+- "Order 5 icon jerseys from New Era and received three statements from laundry."
+[
+  {"type":"add", "edition":"Icon", "quantity":5, "vendor":"New Era", "notes":"order_placed"},
+  {"type":"laundry_return", "edition":"Statement", "quantity":3}
+]
+
+- If user says “Put these 2 jerseys in Kevin’s locker but only keep 3 total there.”, make a note about locker limit.
+
+Response: Only return the pure JSON array of inventory change instructions, no explanations or summaries. Always ignore non-inventory chitchat in your JSON!`;
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -624,51 +659,12 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: `You are an AI assistant for Houston Rockets jersey inventory management. 
-            
-            Current inventory context: ${JSON.stringify(inventoryContext)}
-            
-            Parse voice commands for inventory operations. Return a JSON object with:
-            - type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'order' | 'show' | 'filter' | 'generate' | 'unknown'
-            - player_name: player name if specified
-            - edition: 'Icon', 'Statement', 'Association', or 'City' if specified
-            - size: jersey size if specified
-            - quantity: number for add/remove operations
-            - target_quantity: absolute number for 'set' operations
-            - recipient: for 'turn_in' operations
-            - filter_type: for 'show'/'filter' -> 'low_stock' | 'zero_stock' | 'lva' | 'player' | 'edition'
-            - action: for 'generate' -> 'reorder_email' | 'report' | 'export'
-            - notes: any additional context
-            
-            Examples:
-            "Add 5 Jalen Green Icon jerseys size 48" -> {"type": "add", "player_name": "Jalen Green", "edition": "Icon", "size": "48", "quantity": 5}
-            "Add 5 City jerseys" -> {"type": "add", "edition": "City", "quantity": 5}
-            "Remove 3 Statement jerseys" -> {"type": "remove", "edition": "Statement", "quantity": 3}
-            "Set Jalen Green Icon size 48 to 10" -> {"type": "set", "player_name": "Jalen Green", "edition": "Icon", "size": "48", "target_quantity": 10}
-            "Turn in 2 jerseys for Jalen Green" -> {"type": "turn_in", "player_name": "Jalen Green", "quantity": 2}
-            "Delete all City edition jerseys" -> {"type": "delete", "edition": "City"}
-            "Order 5 Icon jerseys size 48" -> {"type": "order", "edition": "Icon", "size": "48", "quantity": 5}
-            "Show low stock" -> {"type": "show", "filter_type": "low_stock"}
-            "Show zero stock" -> {"type": "show", "filter_type": "zero_stock"}
-            "Filter by player Jalen Green" -> {"type": "filter", "filter_type": "player", "player_name": "Jalen Green"}
-            "Filter edition City" -> {"type": "filter", "filter_type": "edition", "edition": "City"}
-            "Generate reorder email" -> {"type": "generate", "action": "reorder_email"}
-            "Generate report" -> {"type": "generate", "action": "report"}
-            "Export inventory" -> {"type": "generate", "action": "export"}
-            
-            Important: If no player name is specified, still process the command with just edition and quantity.`
-          },
-          {
-            role: 'user',
-            content: `Voice command: "${transcript}"`
-          }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Voice command: "${transcript}"` }
         ],
         temperature: 0.1,
       }),
     });
-
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       if (response.status === 401) {
@@ -681,10 +677,8 @@ export async function interpretVoiceCommandWithAI(transcript: string, currentInv
         throw new Error(`OpenAI API failed: ${response.statusText} - ${errorData.error?.message || ''}`);
       }
     }
-
     const data = await response.json();
     const commandText = data.choices?.[0]?.message?.content?.trim();
-    
     try {
       return JSON.parse(commandText);
     } catch {
