@@ -7,3 +7,60 @@ html, body, #root {
 body {
   @apply bg-white text-gray-900 antialiased;
 }
+
+/* Mobile-first voice mic styles */
+.mic-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: linear-gradient(135deg, rgba(255,255,255,0.85), rgba(245,248,255,0.9));
+  box-shadow: 0 10px 28px rgba(24,102,255,0.18), 0 4px 24px rgba(65,0,150,0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  transition: transform 120ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+.mic-pill:active { transform: scale(0.99); }
+.mic-pill.idle { border-color: rgba(59, 130, 246, 0.3); }
+.mic-pill.recording { border-color: rgba(239, 68, 68, 0.45); background: linear-gradient(135deg, rgba(255,245,245,0.92), rgba(255,250,250,0.96)); }
+.mic-pill.processing { border-color: rgba(168, 85, 247, 0.4); background: linear-gradient(135deg, rgba(245,243,255,0.92), rgba(240,249,255,0.96)); }
+
+.mic-content { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+.mic-icon { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9999px; background: white; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 6px 16px rgba(24,102,255,0.15); }
+.mic-label { font-weight: 800; letter-spacing: 0.2px; color: #0f172a; font-size: 14px; }
+
+.mic-ring { position: absolute; inset: -8px; border-radius: 9999px; pointer-events: none; }
+.mic-ring.recording { box-shadow: 0 0 0 0 rgba(239,68,68,0.18); animation: micPulse 1200ms infinite; }
+.mic-ring.transcribing,
+.mic-ring.interpreting,
+.mic-ring.executing { box-shadow: 0 0 0 0 rgba(59,130,246,0.16); animation: micPulse 1400ms infinite; }
+.mic-ring.success { box-shadow: 0 0 0 0 rgba(34,197,94,0.18); animation: micPulse 1400ms 2; }
+.mic-ring.error { box-shadow: 0 0 0 0 rgba(239,68,68,0.18); animation: micPulse 1400ms 2; }
+
+@keyframes micPulse { to { box-shadow: 0 0 0 16px rgba(0,0,0,0); } }
+
+/* Transcript bubbles for compact mobile chat view */
+.transcript-bubble { max-width: 92vw; padding: 8px 10px; border-radius: 12px; line-height: 1.2; }
+.transcript-bubble.user { background: #eef2ff; color: #1e293b; border: 1px solid rgba(99,102,241,0.25); }
+.transcript-bubble.ai { background: #f1f5f9; color: #0f172a; border: 1px solid rgba(148,163,184,0.25); }
+.transcript-bubble .text { display: inline; word-break: break-word; }
+
+/* Live transcript chip */
+.transcript-live { margin-left: 8px; padding: 6px 10px; border-radius: 9999px; background: #fff; border: 1px solid rgba(148,163,184,0.3); color: #334155; box-shadow: 0 4px 12px rgba(2,6,23,0.06); font-size: 12px; }
+
+/* Safe-area helper for iOS */
+@supports(padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+
+/* Tighten default body on mobile */
+@media (max-width: 420px) {
+  .mic-label { font-size: 13px; }
+  .mic-icon { width: 26px; height: 26px; }
+  .mic-pill { min-height: 54px; padding: 10px 12px; }
+}
