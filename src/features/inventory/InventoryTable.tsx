@@ -1678,37 +1678,6 @@ export function InventoryTable() {
           </div>
         </div>
       )}
-      {/* --- MOBILE STICKY ACTION PAD + MIC (only for mobile, not desktop) --- */}
-      <div className="fixed left-0 right-0 bottom-0 z-50 flex flex-col sm:hidden">
-        <SimplePad rows={rows} onApply={async (action, args) => {
-          const match = rows.find(r => r.player_name === args.player_name && r.edition === args.edition && r.size === args.size);
-          if (!match) { toast.error('Item not found'); return; }
-          if (action === 'given_away') {
-            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - args.quantity) });
-            toast.success(`Recorded giveaway of ${args.quantity}`);
-            return;
-          }
-          if (action === 'to_cleaners') {
-            const dec = Math.min(args.quantity, match.qty_inventory);
-            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - dec), qty_due_lva: match.qty_due_lva + dec });
-            toast.success(`Sent ${dec} to laundry`);
-            return;
-          }
-          if (action === 'ordered') {
-            try { await supabase.from('activity_logs').insert({ action: 'ordered', details: { id: match.id, ...args } }); } catch {}
-            toast.success('Order recorded');
-            return;
-          }
-          if (action === 'received') {
-            await updateField(match, { qty_inventory: match.qty_inventory + args.quantity });
-            toast.success(`Received ${args.quantity}`);
-            return;
-          }
-        }} />
-        <div className="absolute bottom-5 right-5 z-60">
-          <VoiceMic rows={rows} large locked onAction={async (command) => { /* Your onAction logic here */ }} />
-        </div>
-      </div>
     </div>
   );
 }
