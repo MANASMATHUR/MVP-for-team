@@ -296,51 +296,54 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     }
   };
 
+  // After any speech command, success or fail, reset listening and processingStep to idle
   const processVoiceCommand = async (transcript: string) => {
     if (!transcript.trim()) return;
-    
     setIsProcessing(true);
     setProcessingStep('interpreting');
-    
     try {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-      let command: VoiceCommand;
-      
-      // Prefer trying to interpret an inventory command first (even if the user greets first)
+      let commands: VoiceCommand | VoiceCommand[];
       if (apiKey) {
-        command = await interpretVoiceCommandWithAI(transcript, rows);
-        if (!command || command.type === 'unknown') {
-          command = interpretVoiceCommandLocal(transcript);
+        commands = await interpretVoiceCommandWithAI(transcript, rows);
+        if (!commands || (Array.isArray(commands) && commands.every(cmd => cmd.type === 'unknown')) || (!Array.isArray(commands) && commands.type === 'unknown')) {
+          commands = interpretVoiceCommandLocal(transcript);
         }
       } else {
-        command = interpretVoiceCommandLocal(transcript);
+        commands = interpretVoiceCommandLocal(transcript);
       }
-      
-      // If no command recognized, fallback to conversational reply
-      if (!command || command.type === 'unknown') {
+
+      // If multiple actions, always run all
+      let allSucceeded = false;
+      let confirmations: string[] = [];
+      if (Array.isArray(commands)) {
+        allSucceeded = false;
+        for (const command of commands) {
+          setLastCommand(command);
+          setProcessingStep('executing');
+          const actionResult = await Promise.resolve(onAction(command));
+          const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
+          const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
+          if (succeeded) {
+            confirmations.push(getConfirmationMessage(command, info));
+          }
+          allSucceeded = allSucceeded || succeeded;
+        }
+      } else {
+        setLastCommand(commands);
         setProcessingStep('executing');
-        const response = await handleGeneralConversation(transcript);
-        speak(response);
-        setProcessingStep('success');
-        setTimeout(() => setProcessingStep('idle'), 2000);
-        return;
+        const actionResult = await Promise.resolve(onAction(commands));
+        const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
+        const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
+        if (succeeded) {
+          confirmations.push(getConfirmationMessage(commands, info));
+        }
+        allSucceeded = succeeded;
       }
-      
-      setLastCommand(command);
-      setProcessingStep('executing');
-      
-      const actionResult = await Promise.resolve(onAction(command));
-      const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
-      const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
-
-      if (succeeded) {
+      if (confirmations.length) {
         setProcessingStep('success');
-        const confirmationMessage = getConfirmationMessage(command, info);
-        speak(confirmationMessage);
-
-        // Haptic feedback on success (mobile devices)
-        if (navigator.vibrate) {
-          navigator.vibrate([20, 30, 20]);
+        for (const msg of confirmations) {
+          speak(msg);
         }
       } else {
         setProcessingStep('error');
@@ -348,20 +351,20 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           navigator.vibrate([50, 50, 50]);
         }
       }
-      
       setTimeout(() => {
         setProcessingStep('idle');
         setLastCommand(null);
+        setListening(false); // Ensure MIC always resets
       }, 3000);
-      
     } catch (error) {
       setProcessingStep('error');
       setTimeout(() => {
         setProcessingStep('idle');
+        setListening(false); // Always reset after error too
       }, 2000);
     } finally {
       setIsProcessing(false);
-      setListening(false);
+      setListening(false); // Always cleanup on finally
       setTranscript('');
     }
   };
@@ -521,6 +524,33 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       };
     }
 
+    // EXTENDED: Match flexible jersey returns from laundry and similar phrases
+    const flexLaundryReturn = normalizedNumbers.match(/(?:([\d]+)\s+)?(?:(icon|icons?|statement|statements?|association|associations?|city|cities)\s*)?(?:jersey|jerseys)?\s*(?:has|have|was|were|is|are)?\s*(?:arrived|returned|came|come|back|received|done|finished|delivered)?\s*(?:from|out of)?\s*(laundry|cleaner|cleaners|cleaned|wash|washed|washing)/i);
+    if (flexLaundryReturn) {
+      const qty = parseInt(flexLaundryReturn[1], 10) || 1;
+      const editionWord = flexLaundryReturn[2];
+      const normalizedEdition = editionWord ? editionWord.replace(/s\b/, '') : undefined;
+      return {
+        type: 'laundry_return',
+        edition: normalizedEdition ? normalizedEdition.charAt(0).toUpperCase() + normalizedEdition.slice(1).toLowerCase() : undefined,
+        quantity: qty,
+      };
+    }
+    // EXTENDED: Very flexible give-away/gift/transfer to non-laundry recipients (passive and active)
+    const flexGiveAway = normalizedNumbers.match(/(?:([\d]+)\s+)?(?:(icon|icons?|statement|statements?|association|associations?|city|cities)\s*)?(?:jersey|jerseys)?\s*(?:has|have|was|were|is|are)?\s*(?:given away|given|gifted|handed|transferred|donated|presented|sent|turned in)?\s*(?:to|for)?\s*(fan|player|coach|staff|[a-z]+)/i);
+    if (flexGiveAway) {
+      const qty = parseInt(flexGiveAway[1], 10) || 1;
+      const editionWord = flexGiveAway[2];
+      const recipientWord = flexGiveAway[3];
+      const normalizedEdition = editionWord ? editionWord.replace(/s\b/, '') : undefined;
+      return {
+        type: 'turn_in',
+        edition: normalizedEdition ? normalizedEdition.charAt(0).toUpperCase() + normalizedEdition.slice(1).toLowerCase() : undefined,
+        quantity: qty,
+        recipient: recipientWord ? recipientWord.trim().replace(/\b\w/g, c => c.toUpperCase()) : undefined,
+      };
+    }
+
     return { type: 'unknown' };
   };
 
@@ -675,12 +705,15 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       }
   };
 
+  // Also ensure stopListening() always sets step to idle
   const stopListening = () => {
     if (!listening) return;
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
+    setListening(false); // Always reset
+    setProcessingStep('idle');
   };
 
   if (!supported) {
@@ -746,13 +779,10 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
   return (
     <div className={`flex items-center gap-2 ${large ? 'w-full' : ''}`}>
       <button
-        className={`${large ? 'w-full py-3 rounded-xl text-base font-bold' : 'btn btn-sm'} ${
-          listening 
-            ? (large ? 'text-white bg-red-600 border-red-700' : 'btn-error') 
-            : isProcessing 
-            ? (large ? 'text-white bg-yellow-600 border-yellow-700' : 'btn-warning') 
-            : (large ? 'text-white bg-blue-600 border-blue-700' : 'btn-secondary')
-        }`}
+        className={`${large
+            ? `mic-pill ${listening ? 'recording' : isProcessing ? 'processing' : 'idle'}`
+            : `btn btn-sm ${listening ? 'btn-error' : isProcessing ? 'btn-warning' : 'btn-secondary'}`
+          }`}
         onClick={listening ? stopListening : startListening}
         disabled={isProcessing}
         onTouchStart={() => {
@@ -778,27 +808,34 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           if (listening) stopListening();
         }}
       >
-        {getStatusIcon()}
-        <span className={large ? '' : 'hidden sm:inline'}>
-          {getStatusText()}
-        </span>
+        {large ? (
+          <div className="mic-content">
+            <div className={`mic-icon ${processingStep}`}>{getStatusIcon()}</div>
+            <div className="mic-label">{getStatusText()}</div>
+            <div className={`mic-ring ${processingStep}`}></div>
+          </div>
+        ) : (
+          <>
+            {getStatusIcon()}
+            <span className={'hidden sm:inline'}>{getStatusText()}</span>
+          </>
+        )}
       </button>
       
       {/* Lightweight transcript view */}
       {messages.length > 0 && (
         <div className={`flex-col gap-1 text-xs ${large ? 'flex max-w-full' : 'hidden md:flex max-w-80'}`}>
           {messages.slice(-4).map((m, idx) => (
-            <div key={idx} className={m.role === 'user' ? 'text-gray-700' : 'text-blue-700'}>
-              {m.role === 'user' ? 'You: ' : 'AI: '}"{m.content}"
+            <div key={idx} className={`transcript-bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
+              <span className="who">{m.role === 'user' ? 'You' : 'AI'}:</span>
+              <span className="text">{m.content}</span>
             </div>
           ))}
         </div>
       )}
 
       {transcript && (
-        <div className="text-sm text-blue-600 max-w-64 truncate bg-blue-50 px-2 py-1 rounded">
-          🎤 "{transcript}"
-        </div>
+        <div className="transcript-live">🎤 {transcript}</div>
       )}
       
       {lastCommand && processingStep === 'success' && (
