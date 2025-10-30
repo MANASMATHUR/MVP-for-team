@@ -1,5 +1,5 @@
 
-create extension if not exists pgcrypto; -- for gen_random_uuid
+create extension if not exists pgcrypto; 
 
 create table if not exists public.jerseys (
   id uuid primary key default gen_random_uuid(),
