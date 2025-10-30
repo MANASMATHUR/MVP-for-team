@@ -204,7 +204,7 @@ export function Roster() {
         </div>
       )}
       {/* Large Centered Glassmorphic MIC - always visible (mobile + desktop), above all */}
-      <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center items-end pb-4">
+      <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center items-end pb-4 safe-area-bottom">
         <div className="w-full max-w-xl mx-auto px-4">
           <div className="rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
             <VoiceMic
