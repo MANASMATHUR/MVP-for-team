@@ -180,126 +180,52 @@ export function Roster() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Next Game banner */}
-      <div className="rounded-2xl p-6 bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm opacity-80">Next Game</div>
-            <div className="text-2xl font-bold mt-1">vs Los Angeles Lakers</div>
-            <div className="text-sm mt-3 opacity-80">Mon, Nov 3 • 19:30 • Home</div>
-          </div>
-          <span className="text-xs bg-white/10 px-3 py-1 rounded-full">Home</span>
+    <div className="bg-gray-50 min-h-screen pt-3 pb-12">
+      {/* Next Game BANNER */}
+      <div className="mx-3 mb-3 rounded-2xl bg-gray-900 p-4 shadow flex flex-col gap-2 text-white">
+        <div className="text-lg font-bold leading-snug">Next Game</div>
+        <div className="text-2xl font-black tracking-tight">vs Los Angeles Lakers</div>
+        <div className="flex text-sm gap-6 items-center mt-1 opacity-90">
+          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>Mon, Nov 3</span>
+          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>19:30</span>
+          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>Home</span>
+          <span className="ml-auto"><span className="inline-block px-3 py-1 text-xs font-bold rounded-full bg-blue-600">Home</span></span>
         </div>
       </div>
-
-      {/* Critical banner */}
-      <div className="rounded-2xl p-4 bg-red-600 text-white flex items-center justify-between shadow">
-        <div>
-          <div className="uppercase text-xs tracking-wide opacity-90">Critical</div>
-          <div className="text-sm opacity-90">Players need jerseys</div>
-        </div>
+      {/* CRITICAL Banner */}
+      <div className="mx-3 rounded-2xl bg-red-600 flex items-center justify-between p-4 mb-4 shadow text-white">
         <div className="flex items-center gap-3">
-          <div className="text-2xl font-extrabold">{readyCount}/{players.length}</div>
-          <button
-            className="btn btn-sm btn-white text-red-700"
-            onClick={async () => {
-              // Suggest reorder per vendor for non-ready players
-              const { data: settings } = await supabase.from('settings').select('locker_max, closet_max, low_stock_threshold').single();
-              const threshold = settings?.low_stock_threshold ?? 1;
-              const byVendor: Record<string, number> = {};
-              const { data: all } = await supabase.from('jerseys').select('*');
-              (all || []).forEach((r: any) => {
-                if ((r.qty_inventory || 0) <= threshold) {
-                  const need = Math.max(1, threshold - (r.qty_inventory || 0));
-                  const vendor = r.vendor || 'Unknown Vendor';
-                  byVendor[vendor] = (byVendor[vendor] || 0) + need;
-                }
-              });
-              const parts = Object.entries(byVendor).map(([v, q]) => `${v}: ${q}`).join(' · ');
-              if (!parts) {
-                toast.success('All vendors OK — no immediate reorder needed');
-              } else {
-                toast(`Reorder suggestion → ${parts}`, { icon: '📦' });
-              }
-            }}
-          >
-            Suggest Reorder
-          </button>
+          <svg width="2em" height="2em" viewBox="0 0 20 20" fill="currentColor" className="text-white"><circle cx="10" cy="10" r="10" fill="#d32f2f"/><text x="10" y="15" textAnchor="middle" fontSize="13" fontWeight="bold" fill="white">!</text></svg>
+          <div>
+            <div className="font-bold text-lg">CRITICAL</div>
+            <div className="text-xs text-white/90">Players need jerseys</div>
+          </div>
+        </div>
+        <div className="flex flex-col items-end">
+          <div className="font-black text-3xl text-white">2/5</div>
+          <div className="text-xs">Players Ready</div>
         </div>
       </div>
-
-      {/* Mic */}
-      <div className="flex items-center justify-end">
-        <VoiceMic rows={rows} onAction={handleVoiceAction} />
-      </div>
-
-      {/* Roster list */}
-      <div className="space-y-3">
-        {loading && <div className="text-gray-500">Loading roster…</div>}
-        {!loading && players.map((p) => (
-          <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow transition p-4 flex items-center justify-between" onClick={() => setActivePlayer(p.name)}>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">{(p.name.match(/\d+/)?.[0] || '').slice(-2) || (p.name.charCodeAt(0) % 99)}</div>
-              <div>
-                <div className="font-semibold text-gray-900">{p.name}</div>
-                <div className="text-xs text-gray-500">{p.total} styles</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`h-3 w-3 rounded-full ${p.ready > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+      {/* Team Roster Title */}
+      <div className="font-bold text-lg px-4 pt-1 pb-3">Team Roster</div>
+      {/* PLAYER CARDS */}
+      <div className="space-y-4 px-2 pb-8">
+        {players.map((p, i) => (
+          <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition p-4 flex items-center justify-between gap-4">
+            <span className="flex items-center gap-4">
+              <span className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl bg-blue-600 text-white shadow-inner">{p.name.match(/\d+/)?.[0] || ((p.name.charCodeAt(0) + i*2) % 99) }</span>
+              <span className="flex flex-col">
+                <span className="font-bold text-base leading-tight text-gray-900">{p.name}</span>
+                <span className="text-xs text-gray-500 mt-1">{p.total} styles &nbsp; &bull; &nbsp; {p.ready} Home</span>
+              </span>
+            </span>
+            <span className="flex gap-3 items-center">
+              {/* status pip: green, red, yellow */}
+              <span className={`h-5 w-5 rounded-full border-2 ${p.ready > 0 ? 'bg-green-400 border-green-700' : p.ready === 0 ? 'bg-red-400 border-red-700' : 'bg-yellow-400 border-yellow-600'}`}></span>
               <span className="text-gray-400">›</span>
-            </div>
+            </span>
           </button>
         ))}
-      </div>
-
-      {activePlayer && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 modal-open">
-          <div className="card w-full sm:max-w-md p-4">
-            <h3 className="text-lg font-semibold mb-3">Quick Update • {activePlayer}</h3>
-            <SimplePad
-              rows={rows}
-              presetPlayer={activePlayer}
-              onApply={async (action, args) => {
-                await applyQuickAction(action, args);
-                setActivePlayer(null);
-              }}
-              onClose={() => setActivePlayer(null)}
-            />
-          </div>
-        </div>
-      )}
-
-      {globalQuick && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 modal-open">
-          <div className="card w-full sm:max-w-md p-4">
-            <h3 className="text-lg font-semibold mb-3">Quick Update</h3>
-            <SimplePad
-              rows={rows}
-              onApply={async (action, args) => {
-                await applyQuickAction(action, args);
-                setGlobalQuick(false);
-              }}
-              onClose={() => setGlobalQuick(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Sticky mobile action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 sm:hidden">
-        <div className="mx-3 mb-3 rounded-2xl shadow-lg border border-gray-200 bg-white p-3 flex items-center justify-between">
-          <button
-            className="flex-1 mr-2 py-3 rounded-xl text-base font-bold text-white bg-blue-600 active:scale-[0.99]"
-            onClick={() => setGlobalQuick(true)}
-          >
-            Quick Update
-          </button>
-          <div className="ml-2 flex-1">
-            <VoiceMic rows={rows} large locked onAction={handleVoiceAction} />
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -1579,152 +1579,35 @@ export function InventoryTable() {
         }}
       />
 
-      {/* Mobile Cards View */}
-      <div className="hidden space-y-4">
+      {/* Mobile Cards View (visible only on mobile) */}
+      <div className="sm:hidden space-y-6 px-2 pb-8">
         {filtered.map((r) => (
-          <div key={r.id} className={`bg-white rounded-xl shadow-lg border-2 transition-all duration-200 hover:shadow-xl ${r.qty_inventory <= 1 ? 'border-red-200 bg-gradient-to-br from-red-50 to-pink-50' : 'border-gray-200 hover:border-blue-200'}`}>
-            <div className="p-4">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex-1">
-                  <input
-                    className="w-full px-3 py-2 text-lg font-bold border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
-                    value={r.player_name}
-                    onChange={(e) => setRows((prev) => prev.map((row) => row.id === r.id ? { ...row, player_name: e.target.value } : row))}
-                    onBlur={(e) => {
-                      const value = e.target.value.trim();
-                      if (value !== r.player_name) updateField(r, { player_name: value });
-                    }}
-                    placeholder="Player name"
-                  />
-                </div>
-                <span className={`ml-3 inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm ${
-                  r.qty_inventory <= 1 
-                    ? 'bg-gradient-to-r from-red-100 to-red-200 text-red-800 border border-red-300' 
-                    : 'bg-gradient-to-r from-green-100 to-green-200 text-green-800 border border-green-300'
-                }`}>
-                  {r.qty_inventory <= 1 ? 'Low Stock' : 'Normal'}
-                </span>
-              </div>
-
-              {/* Details Grid */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Edition</label>
-                  <select
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white"
-                    value={r.edition}
-                    onChange={(e) => updateField(r, { edition: e.target.value as JerseyEdition })}
-                  >
-                    {EDITIONS.map((ed) => (
-                      <option key={ed} value={ed}>{ed}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Size</label>
-                  <input 
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50 focus:bg-white" 
-                    value={r.size} 
-                    onChange={(e) => setRows((prev) => prev.map((row) => row.id === r.id ? { ...row, size: e.target.value } : row))}
-                    onBlur={(e) => {
-                      const value = e.target.value.trim();
-                      if (value !== r.size) updateField(r, { size: value });
-                    }}
-                    placeholder="Size"
-                  />
-                </div>
-              </div>
-
-              {/* Inventory Controls */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Inventory</label>
-                  <Adjuster 
-                    value={r.qty_inventory} 
-                    onChange={(v) => updateField(r, { qty_inventory: v })} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">Due to LVA</label>
-                  <Adjuster 
-                    value={r.qty_due_lva} 
-                    onChange={(v) => updateField(r, { qty_due_lva: v })} 
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg hover:from-blue-100 hover:to-blue-200 transition-all duration-200 shadow-sm border border-blue-200"
-                  onClick={() => setTimeout(() => handleOrderCall(r), 0)}
-                >
-                  <Phone className="h-3 w-3 mr-1" />
-                  Order
-                </button>
-                <button
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg hover:from-gray-100 hover:to-gray-200 transition-all duration-200 shadow-sm border border-gray-200"
-                  onClick={() => setTimeout(() => turnInOne(r), 0)}
-                >
-                  Turn In 1
-                </button>
-                <button
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg hover:from-gray-100 hover:to-gray-200 transition-all duration-200 shadow-sm border border-gray-200"
-                  onClick={() => setTimeout(() => sendToLeague(r), 0)}
-                >
-                  <Send className="h-3 w-3 mr-1" />
-                  Send
-                </button>
-                <button
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-green-700 bg-gradient-to-r from-green-50 to-green-100 rounded-lg hover:from-green-100 hover:to-green-200 transition-all duration-200 shadow-sm border border-green-200"
-                  onClick={() => setTimeout(() => handleOptimizeOrder(r), 0)}
-                >
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Optimize
-                </button>
-                <button
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-purple-700 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg hover:from-purple-100 hover:to-purple-200 transition-all duration-200 shadow-sm border border-purple-200"
-                  onClick={() => setTimeout(async () => {
-                    const fallback = buildReorderEmailDraft({
-                      player_name: r.player_name,
-                      edition: r.edition,
-                      size: r.size,
-                      qty_needed: Math.max(1, (5 - r.qty_inventory))
-                    });
-                    const draft = await buildReorderEmailDraftAI(fallback);
-                    await navigator.clipboard.writeText(draft);
-                    toast.success('Reorder email draft copied to clipboard');
-                  }, 0)}
-                >
-                  📧 Email
-                </button>
-              </div>
-
-              {/* Footer Info */}
-              <div className="pt-3 border-t border-gray-100">
-                <div className="flex justify-between items-center text-xs text-gray-500">
-                  <div>
-                    <span className="font-semibold">Updated:</span> {new Date(r.updated_at).toLocaleDateString()}
-                  </div>
-                  <div>
-                    <span className="font-semibold">By:</span> {r.updated_by || '-'}
-                  </div>
-                </div>
-              </div>
+          <div key={r.id} className="rounded-2xl bg-white shadow-md p-4 flex flex-col gap-3">
+            {/* Header and Style Title */}
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-lg font-bold text-gray-900">{r.edition} Edition</span>
+              <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-3 py-1 text-xs font-bold shadow">{r.size} • {r.player_name}</span>
+            </div>
+            {/* Min/Projected/Locker/Closet Pills */}
+            <div className="flex flex-wrap gap-2 justify-between">
+              <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Min Required: <span className="font-bold ml-1">2</span></span>
+              <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Projected: <span className="font-bold ml-1">7</span></span>
+              <span className="inline-flex items-center font-bold bg-blue-50 border border-blue-300 rounded-full px-3 py-1 text-xs">Locker: {r.qty_locker ?? 0} / 3</span>
+              <span className="inline-flex items-center font-bold bg-yellow-50 border border-yellow-300 rounded-full px-3 py-1 text-xs">Closet: {r.qty_closet ?? 0} / 5</span>
+            </div>
+            {/* Laundry / In Transit Pills */}
+            <div className="flex gap-3">
+              <span className="inline-flex items-center font-bold bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-xs">Laundry: {r.qty_due_lva ?? 0}</span>
+              <span className="inline-flex items-center font-bold bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs">In Transit: 0</span>
+            </div>
+            {/* Main Action Buttons (full-width, spaced) */}
+            <div className="grid grid-cols-1 gap-2 mt-3">
+              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-red-600 active:scale-[0.99] shadow-lg">Give Away</button>
+              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-blue-600 active:scale-[0.99] shadow-lg">To Laundry</button>
+              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-green-600 active:scale-[0.99] shadow-lg">Receive</button>
             </div>
           </div>
         ))}
-        
-        {filtered.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-gray-400 mb-2">
-              <Package className="h-12 w-12 mx-auto" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">No items found</h3>
-            <p className="text-gray-500">No items match your current search criteria</p>
-          </div>
-        )}
       </div>
 
       {/* Add Modal */}
@@ -1795,6 +1678,37 @@ export function InventoryTable() {
           </div>
         </div>
       )}
+      {/* --- MOBILE STICKY ACTION PAD + MIC (only for mobile, not desktop) --- */}
+      <div className="fixed left-0 right-0 bottom-0 z-50 flex flex-col sm:hidden">
+        <SimplePad rows={rows} onApply={async (action, args) => {
+          const match = rows.find(r => r.player_name === args.player_name && r.edition === args.edition && r.size === args.size);
+          if (!match) { toast.error('Item not found'); return; }
+          if (action === 'given_away') {
+            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - args.quantity) });
+            toast.success(`Recorded giveaway of ${args.quantity}`);
+            return;
+          }
+          if (action === 'to_cleaners') {
+            const dec = Math.min(args.quantity, match.qty_inventory);
+            await updateField(match, { qty_inventory: Math.max(0, match.qty_inventory - dec), qty_due_lva: match.qty_due_lva + dec });
+            toast.success(`Sent ${dec} to laundry`);
+            return;
+          }
+          if (action === 'ordered') {
+            try { await supabase.from('activity_logs').insert({ action: 'ordered', details: { id: match.id, ...args } }); } catch {}
+            toast.success('Order recorded');
+            return;
+          }
+          if (action === 'received') {
+            await updateField(match, { qty_inventory: match.qty_inventory + args.quantity });
+            toast.success(`Received ${args.quantity}`);
+            return;
+          }
+        }} />
+        <div className="absolute bottom-5 right-5 z-60">
+          <VoiceMic rows={rows} large locked onAction={async (command) => { /* Your onAction logic here */ }} />
+        </div>
+      </div>
     </div>
   );
 }

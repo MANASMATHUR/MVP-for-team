@@ -70,7 +70,7 @@ function SimplePadImpl({ rows, onApply, presetPlayer, defaultEdition = 'Icon', d
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 backdrop-blur-md bg-white/70 sm:bg-white/90 rounded-t-3xl shadow-xl border-t-4 border-blue-200 p-4">
       <div className="card p-4">
         <div className="grid grid-cols-1 gap-3">
           {!presetPlayer && (
