@@ -45,8 +45,8 @@ export function Roster() {
 
   const [qty, setQty] = useState(1);
 
-  const updateRow = async (type: 'giveaway' | 'laundry' | 'receive', r: typeof rows[0], qty = 1) => {
-    if (!r) return;
+  const updateRow = async (type: 'giveaway' | 'laundry' | 'receive', r: typeof rows[0], qty = 1): Promise<{ success: boolean }> => {
+    if (!r) return { success: false };
     let fields: any = {};
     qty = Math.max(1, qty);
     if (type === 'giveaway') {
@@ -62,19 +62,21 @@ export function Roster() {
       fields.qty_due_lva = Math.max(0, (r.qty_due_lva ?? 0) - qty);
     }
     try {
-      const { data, error } = await supabase
-        .from('jerseys')
+      const { error } = await supabase
+          .from('jerseys')
         .update({ ...fields, updated_at: new Date().toISOString() })
         .eq('id', r.id)
-        .select()
-        .single();
+          .select()
+          .single();
       if (error) throw error;
       setRows(prev => prev.map(row => row.id === r.id ? { ...row, ...fields } : row));
       if (type === 'giveaway') toast.success(`Given away ${qty}!`);
       if (type === 'laundry') toast.success(`Sent ${qty} to Laundry!`);
       if (type === 'receive') toast.success(`Received ${qty}!`);
+      return { success: true };
     } catch (e) {
       toast.error('Error updating inventory.');
+      return { success: false };
     }
   };
 
@@ -176,16 +178,15 @@ export function Roster() {
                     <div className="ml-auto">
                       <VoiceMic
                         rows={[r]}
-                        onAction={async (command) => {
+              onAction={async (command) => {
                           let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
-                          if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
-                          if (command.type === 'laundry_return') type = 'receive';
+                if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                if (command.type === 'laundry_return') type = 'receive';
                           if (command.type === 'add') type = 'receive';
                           if (command.type === 'set' || command.type === 'order') type = undefined;
                           q = Number(command.quantity || command.target_quantity || qty || 1);
                           if (!type) return { success: false };
-                          await updateRow(type, r, q);
-                          return { success: true };
+                          return await updateRow(type, r, q);
                         }}
                       />
                     </div>
@@ -210,15 +211,14 @@ export function Roster() {
               rows={rows}
               onAction={async (command) => {
                 let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
-                if (command.type === 'turn_in' || command.type === 'giveaway' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
                 if (command.type === 'laundry_return') type = 'receive';
                 if (command.type === 'add') type = 'receive';
                 if (command.type === 'set' || command.type === 'order') type = undefined;
                 q = Number(command.quantity || command.target_quantity || 1);
                 const target = resolveTarget(command);
                 if (!type || !target) return { success: false };
-                await updateRow(type, target, q);
-                return { success: true };
+                return await updateRow(type, target, q);
               }}
               large={true}
             />

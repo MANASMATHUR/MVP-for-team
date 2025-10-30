@@ -131,17 +131,16 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     }, 100);
   };
 
-  // Add regex for obvious chit-chat/greetings detection
-  const IS_GREETING = /^(hi+|hello+|hey+|how are you+|good morning|good afternoon|good evening|what's up|wassup|sup|yo+|greetings)[!. ]*$/i;
+  // Conversational mode: no hard filters; GPT handles chit-chat vs actions
 
-  // Replace the hasGreeted logic and on first tap, or if transcript is IS_GREETING, greet user conversationally ONLY (no inventory action)
+  // Friendly first-time greeting only (no actions)
   const startListening = async () => {
     if (listening) return;
     // One-time friendly greeting on first button click (no recording during greeting)
     if (!hasGreeted) {
       setHasGreeted(true);
-      speak("Hello! I'm your inventory management system. I can help you give away, receive, or return jerseys, send items to laundry, and update inventory. Just ask me what to do!");
-      setMessages(prev => [...prev, { role: 'assistant', content: "Hello! I'm your inventory management system. I can help you give away, receive, or return jerseys, send items to laundry, order new ones, and more. Just say a command like 'give away one city jersey' or 'return two to laundry'. How can I help?" }].slice(-10));
+      speak("Hello! I'm your inventory assistant. Ask me anything—inventory or general.");
+      setMessages(prev => [...prev, { role: 'assistant' as const, content: "Hello! I'm your inventory assistant. Ask me anything—inventory or general." }].slice(-10));
       return;
     }
     
@@ -243,14 +242,14 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           
           // No VAD cleanup required
           stream.getTracks().forEach(track => track.stop());
-          setListening(false);
-          if (locked) {
-            setTimeout(() => {
+        setListening(false);
+        if (locked) {
+          setTimeout(() => {
               if (!listening && !isProcessing) startBrowserSpeechRecognition();
-            }, 300);
-          }
-        };
-        
+          }, 300);
+        }
+      };
+      
         // Reset chat memory on first listen of a session if user long-paused before
         // (leave as no-op for now; expose a dedicated reset control elsewhere if needed)
         mediaRecorder.start();
@@ -264,9 +263,9 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         
         if (error instanceof Error) {
           if (error.name === 'NotAllowedError') {
-            alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+          alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
           } else if (error.name === 'NotFoundError') {
-            alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
+          alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
           } else if (error.name === 'NotSupportedError') {
             alert('Audio recording not supported on this device. Please:\n1. Use a modern browser (Chrome, Safari, Firefox)\n2. Make sure you\'re using HTTPS\n3. Try on a different device');
           } else if (error.name === 'SecurityError') {
@@ -274,8 +273,8 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           }
         }
         
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        if (isMobile) {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile) {
           setTimeout(() => {
             startBrowserSpeechRecognition();
           }, 1000);
@@ -283,7 +282,7 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       }
       } else {
         startBrowserSpeechRecognition();
-      }
+    }
   };
 
   // After any speech command, success or fail, reset listening and processingStep to idle
@@ -293,70 +292,63 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     setProcessingStep('interpreting');
     try {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-      let commands, gptReply;
+      let result: VoiceCommand | VoiceCommand[] | undefined;
+      let gptReply: string | undefined;
       if (apiKey) {
-        // Interpret & get chat reply (new: get both from LLM)
-        const result = await interpretVoiceCommandWithAI(transcript, rows, { returnChat: true }); // If API supports both
-        // If your interpretVoiceCommandWithAI just returns actions, call GPT chat separately for non-inventory utterances
-        if (Array.isArray(result) && result[0]?.type && result[0]?.type !== 'unknown') {
-          commands = result;
-        } else if (result?.type && result.type !== 'unknown') {
-          commands = [result];
-        } else {
-          // No actionable inventory, get pure chat reply
-          gptReply = await getConversationalReply(transcript); // fallback or always
+        result = await interpretVoiceCommandWithAI(transcript, rows);
+        const isArray = Array.isArray(result);
+        const hasAction = (isArray && (result as VoiceCommand[]).some(cmd => cmd.type !== 'unknown')) || (!isArray && (result as VoiceCommand).type !== 'unknown');
+        if (!hasAction) {
+          gptReply = await getConversationalReply(transcript);
         }
       } else {
-        // Fallback to local regex
-        commands = interpretVoiceCommandLocal(transcript);
+        result = interpretVoiceCommandLocal(transcript);
       }
-      // Main case: actionable command(s)
-      if (commands && Array.isArray(commands) && commands.length) {
+      
+      if (result && (Array.isArray(result) ? (result as VoiceCommand[]).length > 0 : (result as VoiceCommand).type !== 'unknown')) {
+        const commands = Array.isArray(result) ? (result as VoiceCommand[]) : [result as VoiceCommand];
         setProcessingStep('executing');
-        let confirmations = [];
-        let allSucceeded = false;
+        let confirmations: string[] = [];
+        let anySucceeded = false;
         for (const command of commands) {
-          setLastCommand(command);
-          const actionResult = await Promise.resolve(onAction(command));
-          const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
-          const info = typeof actionResult === 'object' ? actionResult.info : undefined;
-          if (succeeded) {
-            confirmations.push(getConfirmationMessage(command, info));
-          }
-          allSucceeded = allSucceeded || succeeded;
+      setLastCommand(command);
+      const actionResult = await Promise.resolve(onAction(command));
+      const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
+      const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
+          if (succeeded) confirmations.push(getConfirmationMessage(command, info));
+          anySucceeded = anySucceeded || succeeded;
         }
         if (confirmations.length) {
-          for (const msg of confirmations) speak(msg); // TTS
-          setMessages(prev => [...prev, { role: 'assistant', content: confirmations.join(' ') }].slice(-10));
+          for (const msg of confirmations) speak(msg);
+          setMessages(prev => [...prev, { role: 'assistant' as const, content: confirmations.join(' ') }].slice(-10));
           setProcessingStep('success');
         } else {
           setProcessingStep('error');
         }
       } else if (gptReply) {
-        // Conversational reply (small talk, general knowledge, etc)
         speak(gptReply);
-        setMessages(prev => [...prev, { role: 'assistant', content: gptReply }].slice(-10));
+        setMessages(prev => [...prev, { role: 'assistant' as const, content: gptReply }].slice(-10));
         setProcessingStep('success');
       } else {
-        // fallback local for safety
-        const localCommand = interpretVoiceCommandLocal(transcript);
-        if (localCommand && localCommand.type !== 'unknown') {
-          setLastCommand(localCommand);
+        const local = interpretVoiceCommandLocal(transcript);
+        if (local && local.type !== 'unknown') {
+          setLastCommand(local);
           setProcessingStep('executing');
-          const actionResult = await Promise.resolve(onAction(localCommand));
+          const actionResult = await Promise.resolve(onAction(local));
           const succeeded = typeof actionResult === 'object' ? actionResult.success : !!actionResult;
-          const info = typeof actionResult === 'object' ? actionResult.info : undefined;
+          const info: ActionResultInfo | undefined = typeof actionResult === 'object' ? actionResult.info : undefined;
           if (succeeded) {
-            const msg = getConfirmationMessage(localCommand, info);
+            const msg = getConfirmationMessage(local, info);
             speak(msg);
-            setMessages(prev => [...prev, { role: 'assistant', content: msg }].slice(-10));
+            setMessages(prev => [...prev, { role: 'assistant' as const, content: msg }].slice(-10));
             setProcessingStep('success');
-          } else {
-            setProcessingStep('error');
+      } else {
+        setProcessingStep('error');
           }
         } else {
-          speak("I'm sorry, I didn't quite catch that. Try asking anything about inventory or just chat with me!");
-          setMessages(prev => [...prev, { role: 'assistant', content: "I'm here to help—try asking about jerseys, or feel free to chat!" }].slice(-10));
+          const fallback = "I'm here to help—ask about jerseys, or just chat with me!";
+          speak(fallback);
+          setMessages(prev => [...prev, { role: 'assistant' as const, content: fallback }].slice(-10));
           setProcessingStep('idle');
         }
       }
@@ -577,6 +569,8 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         return `Ok, order placed for ${command.quantity || 0} ${command.edition || ''} jerseys${command.size ? ` size ${command.size}` : ''}.`;
       case 'turn_in':
         return `Ok, turned in ${command.quantity || 0} jerseys${command.player_name ? ` for ${command.player_name}` : ''}${command.recipient ? ` to ${command.recipient}` : ''}.`;
+      case 'laundry_return':
+        return `Ok, received ${command.quantity || 0} ${command.edition || ''} jerseys back from laundry.`;
       default:
         return "Ok, command executed successfully.";
     }
@@ -679,26 +673,26 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       };
       
       recognition.onend = () => {
-        setListening(false);
+          setListening(false);
         setProcessingStep('idle');
-        if (locked) {
+          if (locked) {
           // auto-restart after a short pause for noisy environments
-          setTimeout(() => {
+            setTimeout(() => {
             if (!listening) startBrowserSpeechRecognition();
-          }, 300);
-        }
-      };
-      
+            }, 300);
+          }
+        };
+        
       recognition.onerror = (event: any) => {
         setListening(false);
         setProcessingStep('error');
         
         if (event.error === 'not-allowed') {
-          alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
+            alert('Microphone access denied. Please:\n1. Allow microphone permission in your browser\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page');
         } else if (event.error === 'no-speech') {
           setTimeout(() => setProcessingStep('idle'), 1000);
         } else if (event.error === 'audio-capture') {
-          alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
+            alert('No microphone found. Please:\n1. Check your microphone is connected\n2. Make sure no other app is using the microphone\n3. Try refreshing the page');
         } else if (event.error === 'network') {
           alert('Network error. Please check your internet connection and try again.');
         } else if (event.error === 'service-not-allowed') {
@@ -711,11 +705,11 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       recognition.start();
     } catch (error) {
       setProcessingStep('error');
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
         alert('Speech recognition failed on mobile. Please:\n1. Use Chrome or Safari\n2. Make sure you\'re using HTTPS\n3. Try refreshing the page\n4. Check microphone permissions');
       }
-    }
+      }
   };
 
   // Also ensure stopListening() always sets step to idle
@@ -862,9 +856,7 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         </div>
       )}
       
-      <div className="text-xs text-gray-500 text-center max-w-xs mx-auto pt-1">
-        You can say things like: "Send two jerseys to laundry" or "Give away three city jerseys".
-      </div>
+      {/* No repetitive tips; keep UI clean */}
     </div>
   );
 }

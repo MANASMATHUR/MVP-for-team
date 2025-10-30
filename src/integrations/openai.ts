@@ -440,7 +440,7 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
 // Voice and AI Integration Functions
 
 export interface VoiceCommand {
-  type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'order' | 'show' | 'filter' | 'generate' | 'unknown';
+  type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'laundry_return' | 'order' | 'show' | 'filter' | 'generate' | 'unknown';
   player_name?: string;
   edition?: string;
   size?: string;
@@ -601,7 +601,7 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   }
 }
 
-export async function interpretVoiceCommandWithAI(transcript: string, currentInventory: any[]): Promise<VoiceCommand | VoiceCommand[]> {
+export async function interpretVoiceCommandWithAI(transcript: string, _currentInventory: any[]): Promise<VoiceCommand | VoiceCommand[]> {
   const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
   if (!key) {
     return { type: 'unknown' };
