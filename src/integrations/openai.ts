@@ -88,7 +88,6 @@ export async function analyzeInventory(): Promise<InventoryAnalysis> {
   }
 
   try {
-    // Get current inventory data
     const { data: jerseys } = await supabase
       .from('jerseys')
       .select('*');
@@ -96,7 +95,7 @@ export async function analyzeInventory(): Promise<InventoryAnalysis> {
     await supabase
       .from('activity_logs')
       .select('*')
-      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
+      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
     if (!jerseys) {
       return getDefaultAnalysis();
@@ -156,7 +155,6 @@ export async function analyzeInventory(): Promise<InventoryAnalysis> {
     try {
       return JSON.parse(analysisText);
     } catch {
-      // If JSON parsing fails, return default analysis
       return getDefaultAnalysis();
     }
   } catch (error) {
@@ -198,7 +196,7 @@ export async function optimizeOrderQuantity(
     await supabase
       .from('activity_logs')
       .select('*')
-      .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()) // Last 90 days
+      .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
       .contains('details', { player_name: playerName });
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -265,7 +263,7 @@ function getDefaultOrderOptimization(): OrderOptimization {
         cons: ['Higher upfront cost', 'More storage space required'],
       },
     ],
-    costEstimate: 375, // Assuming $75 per jersey
+    costEstimate: 375,
   };
 }
 
@@ -413,7 +411,6 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
     const data = await res.json();
     const suggestionsText = data.choices?.[0]?.message?.content?.trim();
     
-    // Extract suggestions from the response
     const suggestions = suggestionsText
       .split('\n')
       .filter((line: string) => line.trim().length > 0)
@@ -436,9 +433,7 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
     ];
   }
 }
-
-// Voice and AI Integration Functions
-
+  
 export interface VoiceCommand {
   type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'laundry_return' | 'order' | 'show' | 'filter' | 'generate' | 'unknown';
   player_name?: string;
@@ -452,7 +447,6 @@ export interface VoiceCommand {
   action?: 'reorder_email' | 'report' | 'export';
 }
 
-// Conversational chat memory (in-memory per page session)
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 let chatHistory: ChatMessage[] = [];
 const CHAT_STORAGE_KEY = 'hr_chat_history_v1';

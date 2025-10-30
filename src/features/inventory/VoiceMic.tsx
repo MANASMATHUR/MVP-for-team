@@ -17,8 +17,8 @@ interface ActionResult {
 interface Props {
   rows: JerseyItem[];
   onAction: (command: VoiceCommand) => Promise<boolean | ActionResult> | boolean | ActionResult;
-  locked?: boolean; // keep mic open and auto-restart between utterances
-  large?: boolean;  // big button for mobile sticky bar
+  locked?: boolean;
+  large?: boolean;
 }
 
 export function VoiceMic({ rows, onAction, locked = false, large = false }: Props) {
@@ -69,28 +69,25 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     }
     
     if (speechSynthesis.speaking) {
-      // Barge-in: stop current speech immediately
       speechSynthesis.cancel();
     }
     
     setTimeout(() => {
       try {
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.92; // slightly slower for clarity
-        utterance.pitch = 0.95; // warmer tone
+        utterance.rate = 0.92;
+        utterance.pitch = 0.95;
         utterance.volume = 1.0;
         utterance.lang = 'en-US';
         
         const voices = speechSynthesis.getVoices();
         if (voices.length > 0) {
-          // prefer high-quality English female voices where available
           const preferred = voices.find(v => /en-US/i.test(v.lang) && /female|samantha|google us english/i.test((v as any).name || ''))
             || voices.find(v => /en-US/i.test(v.lang))
             || voices.find(v => v.lang.startsWith('en'));
           if (preferred) utterance.voice = preferred;
         }
         
-        // Track utterance to support barge-in
         currentUtteranceRef.current = utterance;
 
         utterance.onend = () => {
@@ -98,26 +95,22 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         };
 
         speechSynthesis.speak(utterance);
-        // Update last assistant reply for echo guard
         lastAssistantReplyRef.current = text;
         
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (isMobile) {
-          // Mobile browsers need multiple attempts for speech synthesis
           setTimeout(() => {
             if (!speechSynthesis.speaking) {
               speechSynthesis.speak(utterance);
             }
           }, 500);
           
-          // Second attempt after 1.5 seconds
           setTimeout(() => {
             if (!speechSynthesis.speaking) {
               speechSynthesis.speak(utterance);
             }
           }, 1500);
           
-          // Final attempt after 3 seconds
           setTimeout(() => {
             if (!speechSynthesis.speaking) {
               speechSynthesis.speak(utterance);
@@ -131,12 +124,8 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     }, 100);
   };
 
-  // Conversational mode: no hard filters; GPT handles chit-chat vs actions
-
-  // Friendly first-time greeting only (no actions)
   const startListening = async () => {
     if (listening) return;
-    // One-time friendly greeting on first button click (no recording during greeting)
     if (!hasGreeted) {
       setHasGreeted(true);
       speak("Hello! I'm your inventory assistant. Ask me anything—inventory or general.");
@@ -197,12 +186,10 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
 
-        // Barge-in: stop any ongoing TTS when mic starts
         if (window.speechSynthesis?.speaking) {
           window.speechSynthesis.cancel();
         }
 
-        // Removed VAD: mic will only stop when user presses the button
         
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
@@ -217,7 +204,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           try {
             const transcript = await transcribeAudio(audioBlob);
             setTranscript(transcript);
-            // Show in transcript list as user message for chat feel
             setMessages(prev => [...prev, { role: 'user' as const, content: transcript }].slice(-10));
             await processVoiceCommand(transcript);
           } catch (error) {
@@ -240,7 +226,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
             setTimeout(() => setProcessingStep('idle'), 3000);
           }
           
-          // No VAD cleanup required
           stream.getTracks().forEach(track => track.stop());
         setListening(false);
         if (locked) {
@@ -250,13 +235,10 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         }
       };
       
-        // Reset chat memory on first listen of a session if user long-paused before
-        // (leave as no-op for now; expose a dedicated reset control elsewhere if needed)
         mediaRecorder.start();
         setListening(true);
         setProcessingStep('recording');
         playBeep();
-        // Removed mobile greeting backup to prevent echo/repetition
         
       } catch (error) {
         setProcessingStep('error');
@@ -663,7 +645,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         
         if (finalTranscript) {
           setTranscript(finalTranscript);
-          // Echo guard: ignore if it's exactly the last assistant reply
           if (lastAssistantReplyRef.current && finalTranscript.trim() === lastAssistantReplyRef.current.trim()) {
             setProcessingStep('idle');
             return;
@@ -676,7 +657,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
           setListening(false);
         setProcessingStep('idle');
           if (locked) {
-          // auto-restart after a short pause for noisy environments
             setTimeout(() => {
             if (!listening) startBrowserSpeechRecognition();
             }, 300);
@@ -712,7 +692,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       }
   };
 
-  // Also ensure stopListening() always sets step to idle
   const stopListening = () => {
     if (!listening) return;
     
@@ -829,7 +808,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         )}
       </button>
       
-      {/* Lightweight transcript view */}
       {messages.length > 0 && (
         <div className={`flex-col gap-1 text-xs ${large ? 'flex max-w-full' : 'hidden md:flex max-w-80'}`}>
           {messages.slice(-4).map((m, idx) => (
@@ -856,7 +834,6 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         </div>
       )}
       
-      {/* No repetitive tips; keep UI clean */}
     </div>
   );
 }

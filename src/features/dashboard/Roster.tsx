@@ -82,7 +82,6 @@ export function Roster() {
 
   return (
     <div className="bg-gray-50 min-h-screen pt-3 pb-28 relative">
-      {/* Next Game BANNER */}
       <div className="mx-3 mb-3 rounded-2xl bg-gray-900 p-4 shadow flex flex-col gap-2 text-white">
         <div className="text-lg font-bold leading-snug">Next Game</div>
         <div className="text-2xl font-black tracking-tight">vs Los Angeles Lakers</div>
@@ -93,7 +92,6 @@ export function Roster() {
           <span className="ml-auto"><span className="inline-block px-3 py-1 text-xs font-bold rounded-full bg-blue-600">Home</span></span>
         </div>
       </div>
-      {/* CRITICAL Banner */}
       <div className="mx-3 rounded-2xl bg-red-600 flex items-center justify-between p-4 mb-4 shadow text-white">
         <div className="flex items-center gap-3">
           <svg width="2em" height="2em" viewBox="0 0 20 20" fill="currentColor" className="text-white"><circle cx="10" cy="10" r="10" fill="#d32f2f"/><text x="10" y="15" textAnchor="middle" fontSize="13" fontWeight="bold" fill="white">!</text></svg>
@@ -107,9 +105,7 @@ export function Roster() {
           <div className="text-xs">Players Ready</div>
         </div>
       </div>
-      {/* Team Roster Title */}
       <div className="font-bold text-lg px-4 pt-1 pb-3">Team Roster</div>
-      {/* PLAYER CARDS */}
       <div className="space-y-4 px-2 pb-8">
         {players.map((p, i) => (
           <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition p-4 flex items-center justify-between gap-4" onClick={() => setActivePlayer(p.name)}>
@@ -121,7 +117,6 @@ export function Roster() {
               </span>
             </span>
             <span className="flex gap-3 items-center">
-              {/* status pip: green, red, yellow */}
               <span className={`h-5 w-5 rounded-full border-2 ${p.ready > 0 ? 'bg-green-400 border-green-700' : p.ready === 0 ? 'bg-red-400 border-red-700' : 'bg-yellow-400 border-yellow-600'}`}></span>
               <span className="text-gray-400">›</span>
             </span>
@@ -131,23 +126,18 @@ export function Roster() {
       {activePlayer && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center">
           <div className="card w-full max-w-lg rounded-t-2xl overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between bg-gray-900 text-white px-5 py-4">
               <span className="text-lg font-extrabold">{activePlayer}</span>
               <button onClick={() => setActivePlayer(null)} className="text-2xl px-2 py-1">×</button>
             </div>
-            {/* Player subtitle */}
             <div className="text-base px-5 pt-1 pb-3 text-gray-500 font-medium">{rows.filter(r => r.player_name === activePlayer).length} Jersey Styles</div>
-            {/* Jersey Styles, for each row with player_name === activePlayer */}
             <div className="space-y-6 px-3 pb-4">
               {rows.filter(r => r.player_name === activePlayer).map((r, idx) => (
                 <div key={r.id || idx} className="rounded-2xl bg-white shadow-md p-4 flex flex-col gap-3">
-                  {/* Style/edition title */}
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-lg font-bold text-gray-900">{r.edition} Edition</span>
                     <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-3 py-1 text-xs font-bold shadow">{r.size}</span>
                   </div>
-                  {/* Pills: Locker, Closet, Laundry, Min/Proj */}
                   <div className="flex flex-wrap gap-2 justify-between mt-1">
                     <span className="inline-flex items-center font-bold bg-blue-50 border border-blue-300 rounded-full px-3 py-1 text-xs">Locker: {r.qty_locker ?? 0} / 3</span>
                     <span className="inline-flex items-center font-bold bg-yellow-50 border border-yellow-300 rounded-full px-3 py-1 text-xs">Closet: {r.qty_closet ?? 0} / 5</span>
@@ -158,7 +148,6 @@ export function Roster() {
                     <span className="inline-flex items-center font-bold bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-xs">Laundry: {r.qty_due_lva ?? 0}</span>
                     <span className="inline-flex items-center font-bold bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs">In Transit: 0</span>
                   </div>
-                  {/* Quantity Selector + Inline MIC */}
                   <div className="flex items-center gap-2 mt-3">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-700 font-medium">Qty</span>
@@ -191,7 +180,6 @@ export function Roster() {
                       />
                     </div>
                   </div>
-                  {/* Action Buttons */}
                   <div className="grid grid-cols-1 gap-2 mt-2">
                     <button className="w-full py-3 rounded-xl font-extrabold text-white bg-red-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('giveaway', r, qty)}>Give Away</button>
                     <button className="w-full py-3 rounded-xl font-extrabold text-white bg-blue-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('laundry', r, qty)}>To Laundry</button>
@@ -203,7 +191,6 @@ export function Roster() {
           </div>
         </div>
       )}
-      {/* Large Centered Glassmorphic MIC - always visible (mobile + desktop), above all */}
       <div className="mic-dock pointer-events-none">
         <div className="w-full max-w-xl mx-auto">
           <div className="pointer-events-auto rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
