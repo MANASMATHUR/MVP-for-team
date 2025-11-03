@@ -276,12 +276,43 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
       let result: VoiceCommand | VoiceCommand[] | undefined;
       let gptReply: string | undefined;
+      let hasConversationalContent = false;
+      
       if (apiKey) {
+        // First try to interpret any inventory commands
         result = await interpretVoiceCommandWithAI(transcript, rows);
         const isArray = Array.isArray(result);
         const hasAction = (isArray && (result as VoiceCommand[]).some(cmd => cmd.type !== 'unknown')) || (!isArray && (result as VoiceCommand).type !== 'unknown');
+        
+        // If no inventory action found, check if it's conversational
         if (!hasAction) {
-          gptReply = await getConversationalReply(transcript);
+          // Always get conversational reply to handle all types of input
+          gptReply = await getConversationalReply(transcript, {
+            context: {
+              inventory_summary: rows.length > 0 ? {
+                total_items: rows.length,
+                low_stock: rows.filter(r => (r.qty_inventory ?? 0) <= 1).length,
+                total_inventory: rows.reduce((sum, r) => sum + (r.qty_inventory ?? 0), 0),
+              } : null
+            }
+          });
+          hasConversationalContent = true;
+        } else {
+          // Even if we have inventory actions, check if there's conversational content
+          // Some prompts might be: "Give away 2 jerseys, by the way how are you?"
+          const hasConversationKeywords = /\b(how|what|why|where|when|tell|explain|talk|chat|discuss|ask)\b/i.test(transcript);
+          if (hasConversationKeywords) {
+            gptReply = await getConversationalReply(transcript, {
+              context: {
+                inventory_summary: rows.length > 0 ? {
+                  total_items: rows.length,
+                  low_stock: rows.filter(r => (r.qty_inventory ?? 0) <= 1).length,
+                  total_inventory: rows.reduce((sum, r) => sum + (r.qty_inventory ?? 0), 0),
+                } : null
+              }
+            });
+            hasConversationalContent = true;
+          }
         }
       } else {
         result = interpretVoiceCommandLocal(transcript);
@@ -303,6 +334,15 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         if (confirmations.length) {
           for (const msg of confirmations) speak(msg);
           setMessages(prev => [...prev, { role: 'assistant' as const, content: confirmations.join(' ') }].slice(-10));
+        }
+        
+        // If there's also conversational content, add it after inventory confirmations
+        if (hasConversationalContent && gptReply) {
+          speak(gptReply);
+          setMessages(prev => [...prev, { role: 'assistant' as const, content: gptReply }].slice(-10));
+        }
+        
+        if (confirmations.length || hasConversationalContent) {
           setProcessingStep('success');
         } else {
           setProcessingStep('error');
