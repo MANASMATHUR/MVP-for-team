@@ -58,21 +58,22 @@ const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
 >(({ side = "bottom", className, children, ...props }, ref) => {
+  const resolvedSide: "top" | "bottom" | "left" | "right" = side || "bottom";
   const animationMap = {
     top: { in: 'slide-in-from-top', out: 'slide-out-to-top' },
     bottom: { in: 'slide-in-from-bottom', out: 'slide-out-to-bottom' },
     left: { in: 'slide-in-from-left', out: 'slide-out-to-left' },
     right: { in: 'slide-in-from-right', out: 'slide-out-to-right' },
-  };
+  } as const;
   
   return (
     <SheetPortal>
       <SheetOverlay />
       <DialogPrimitive.Content
         ref={ref}
-        className={cn(sheetVariants({ side }), className)}
+        className={cn(sheetVariants({ side: resolvedSide }), className)}
         style={{
-          animation: `${animationMap[side].in} 0.3s ease-out`,
+          animation: `${animationMap[resolvedSide].in} 0.3s ease-out`,
         }}
         {...props}
       >
