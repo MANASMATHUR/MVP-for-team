@@ -3,6 +3,10 @@ import { supabase } from '../../lib/supabaseClient';
 import type { JerseyItem } from '../../types';
 import toast from 'react-hot-toast';
 import { VoiceMic } from '../inventory/VoiceMic';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ChevronRight } from 'lucide-react';
 
 export function Roster() {
   const [rows, setRows] = useState<JerseyItem[]>([]);
@@ -118,38 +122,38 @@ export function Roster() {
             </span>
             <span className="flex gap-3 items-center">
               <span className={`h-5 w-5 rounded-full border-2 ${p.ready > 0 ? 'bg-green-400 border-green-700' : p.ready === 0 ? 'bg-red-400 border-red-700' : 'bg-yellow-400 border-yellow-600'}`}></span>
-              <span className="text-gray-400">›</span>
+              <ChevronRight className="h-5 w-5 text-gray-400" />
             </span>
           </button>
         ))}
       </div>
-      {activePlayer && (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center">
-          <div className="card w-full max-w-lg rounded-t-2xl overflow-hidden">
-            <div className="flex items-center justify-between bg-gray-900 text-white px-5 py-4">
-              <span className="text-lg font-extrabold">{activePlayer}</span>
-              <button onClick={() => setActivePlayer(null)} className="text-2xl px-2 py-1">×</button>
-            </div>
-            <div className="text-base px-5 pt-1 pb-3 text-gray-500 font-medium">{rows.filter(r => r.player_name === activePlayer).length} Jersey Styles</div>
-            <div className="space-y-6 px-3 pb-4">
+      <Sheet open={!!activePlayer} onOpenChange={(open) => !open && setActivePlayer(null)}>
+        <SheetContent side="bottom" className="max-h-[85vh] sm:max-h-[90vh] flex flex-col p-0 gap-0">
+          <SheetHeader className="px-4 sm:px-6 py-4 bg-gray-900 text-white border-b border-gray-800">
+            <SheetTitle className="text-left text-base sm:text-lg font-extrabold">{activePlayer}</SheetTitle>
+            <SheetDescription className="text-left text-sm sm:text-base text-gray-400 mt-1">
+              {activePlayer && rows.filter(r => r.player_name === activePlayer).length} Jersey Styles
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 sm:space-y-6 px-3 sm:px-4 pb-4 sm:pb-6 overflow-y-auto flex-1 min-h-0 pt-4">
               {rows.filter(r => r.player_name === activePlayer).map((r, idx) => (
-                <div key={r.id || idx} className="rounded-2xl bg-white shadow-md p-4 flex flex-col gap-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-lg font-bold text-gray-900">{r.edition} Edition</span>
-                    <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-3 py-1 text-xs font-bold shadow">{r.size}</span>
+                <div key={r.id || idx} className="rounded-2xl bg-white shadow-md p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
+                  <div className="flex items-center justify-between mb-0.5 sm:mb-1">
+                    <span className="text-base sm:text-lg font-bold text-gray-900">{r.edition} Edition</span>
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-300">{r.size}</Badge>
                   </div>
-                  <div className="flex flex-wrap gap-2 justify-between mt-1">
-                    <span className="inline-flex items-center font-bold bg-blue-50 border border-blue-300 rounded-full px-3 py-1 text-xs">Locker: {r.qty_locker ?? 0} / 3</span>
-                    <span className="inline-flex items-center font-bold bg-yellow-50 border border-yellow-300 rounded-full px-3 py-1 text-xs">Closet: {r.qty_closet ?? 0} / 5</span>
-                    <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Min Required: <span className="font-bold ml-1">2</span></span>
-                    <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Projected: <span className="font-bold ml-1">7</span></span>
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-between mt-0.5 sm:mt-1">
+                    <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-900">Locker: {r.qty_locker ?? 0} / 3</Badge>
+                    <Badge variant="outline" className="bg-yellow-50 border-yellow-300 text-yellow-900">Closet: {r.qty_closet ?? 0} / 5</Badge>
+                    <Badge variant="outline" className="bg-gray-100 border-gray-300 text-gray-700">Min Required: <span className="font-bold ml-1">2</span></Badge>
+                    <Badge variant="outline" className="bg-gray-100 border-gray-300 text-gray-700">Projected: <span className="font-bold ml-1">7</span></Badge>
                   </div>
-                  <div className="flex gap-3 mt-1">
-                    <span className="inline-flex items-center font-bold bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-xs">Laundry: {r.qty_due_lva ?? 0}</span>
-                    <span className="inline-flex items-center font-bold bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs">In Transit: 0</span>
+                  <div className="flex gap-2 sm:gap-3 mt-0.5 sm:mt-1">
+                    <Badge variant="outline" className="bg-indigo-50 border-indigo-200 text-indigo-900">Laundry: {r.qty_due_lva ?? 0}</Badge>
+                    <Badge variant="outline" className="bg-gray-50 border-gray-200 text-gray-700">In Transit: 0</Badge>
                   </div>
-                  <div className="flex items-center gap-2 mt-3">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mt-2 sm:mt-3 flex-wrap">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       <span className="text-xs text-gray-700 font-medium">Qty</span>
                       <input
                         type="number"
@@ -157,11 +161,19 @@ export function Roster() {
                         max={r.qty_inventory ?? 100}
                         value={qty}
                         onChange={e => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-                        className="inline-block w-16 rounded-lg border border-gray-300 text-base px-2 py-1 text-center font-bold ring-1 ring-inset ring-blue-200 bg-gray-50 focus:outline-none focus:ring-blue-400 focus:border-blue-400"
+                        className="inline-block w-14 sm:w-16 rounded-lg border border-gray-300 text-sm sm:text-base px-1.5 sm:px-2 py-1 text-center font-bold ring-1 ring-inset ring-blue-200 bg-gray-50 focus:outline-none focus:ring-blue-400 focus:border-blue-400"
                         style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }}
                       />
                       {[1,2,3,5].map(n => (
-                        <button key={n} className={`px-3 py-1.5 text-xs rounded-xl font-semibold border ${qty===n ? 'bg-blue-600 text-white border-blue-700' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50'}`} onClick={() => setQty(n)}>{n}</button>
+                        <Button
+                          key={n}
+                          variant={qty === n ? "default" : "outline"}
+                          size="sm"
+                          className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs h-auto ${qty === n ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700' : ''}`}
+                          onClick={() => setQty(n)}
+                        >
+                          {n}
+                        </Button>
                       ))}
                     </div>
                     <div className="ml-auto">
@@ -180,17 +192,32 @@ export function Roster() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 mt-2">
-                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-red-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('giveaway', r, qty)}>Give Away</button>
-                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-blue-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('laundry', r, qty)}>To Laundry</button>
-                    <button className="w-full py-3 rounded-xl font-extrabold text-white bg-green-600 active:scale-[0.99] shadow-lg" onClick={() => updateRow('receive', r, qty)}>Receive</button>
+                  <div className="grid grid-cols-1 gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
+                    <Button
+                      variant="destructive"
+                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl"
+                      onClick={() => updateRow('giveaway', r, qty)}
+                    >
+                      Give Away
+                    </Button>
+                    <Button
+                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => updateRow('laundry', r, qty)}
+                    >
+                      To Laundry
+                    </Button>
+                    <Button
+                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => updateRow('receive', r, qty)}
+                    >
+                      Receive
+                    </Button>
                   </div>
                 </div>
               ))}
-            </div>
           </div>
-        </div>
-      )}
+        </SheetContent>
+      </Sheet>
       <div className="mic-dock pointer-events-none">
         <div className="w-full max-w-xl mx-auto">
           <div className="pointer-events-auto rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
