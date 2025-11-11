@@ -156,18 +156,54 @@ body {
 /* Live transcript chip */
 .transcript-live { margin-left: 8px; padding: 6px 10px; border-radius: 9999px; background: #fff; border: 1px solid rgba(148,163,184,0.3); color: #334155; box-shadow: 0 4px 12px rgba(2,6,23,0.06); font-size: 12px; }
 
+.mic-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 11px;
+  color: #334155;
+}
+
+.mic-hints--wide {
+  margin-left: 0.75rem;
+}
+
+.mic-hints__label {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #1e3a8a;
+}
+
+.mic-hints__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: linear-gradient(135deg, rgba(191, 219, 254, 0.9), rgba(147, 197, 253, 0.85));
+  box-shadow: 0 10px 20px -18px rgba(37, 99, 235, 0.45);
+}
+
 /* Safe-area helper for iOS */
 @supports(padding-bottom: env(safe-area-inset-bottom)) {
   .safe-area-bottom { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 
 /* Mic dock container for mobile positioning */
-.mic-dock { position: fixed; left: 0; right: 0; bottom: 12px; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0 16px; }
+.mic-dock { position: fixed; left: 0; right: 0; bottom: calc(var(--mobile-nav-height, 72px) + 14px); z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0 16px; }
 @supports(bottom: env(safe-area-inset-bottom)) {
-  .mic-dock { bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .mic-dock { bottom: calc(var(--mobile-nav-height, 72px) + 14px + env(safe-area-inset-bottom)); }
 }
-@media (max-height: 700px) {
-  .mic-dock { bottom: 8px; }
+@media (min-width: 768px) {
+  .mic-dock { bottom: 28px; }
+  @supports(bottom: env(safe-area-inset-bottom)) {
+    .mic-dock { bottom: calc(28px + env(safe-area-inset-bottom)); }
+  }
+}
+@media (max-height: 700px) and (max-width: 767px) {
+  .mic-dock { bottom: calc(var(--mobile-nav-height, 72px) + 10px); }
 }
 
 /* Tighten default body on mobile */
