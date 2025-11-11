@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { transcribeAudio, interpretVoiceCommandWithAI, getConversationalReply, type VoiceCommand } from '../../integrations/openai';
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
@@ -52,6 +52,93 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     const picks = [...conversationPrompts];
     return picks.sort(() => Math.random() - 0.5).slice(0, 3);
   }, [conversationPrompts]);
+
+  const playerNames = useMemo(() => {
+    return Array.from(
+      new Set(
+        rows
+          .map((row) => row.player_name?.trim())
+          .filter((name): name is string => Boolean(name))
+      )
+    );
+  }, [rows]);
+
+  const answerInventoryQuery = useCallback(
+    (input: string): string | null => {
+      const text = input.trim();
+      if (!text) return null;
+
+      const lower = text.toLowerCase();
+      const referencesJerseys = /\bjersey\b|\bjerseys\b/.test(lower);
+      if (!referencesJerseys) return null;
+
+      const hasCountCue =
+        /\bhow many\b/.test(lower) ||
+        /\bwhat(?:'s| is)\s+(?:our\s+)?(?:count|total)\b/.test(lower) ||
+        (lower.includes('total') && lower.includes('jersey')) ||
+        (lower.includes('do we have') && lower.includes('jersey'));
+
+      if (!hasCountCue) return null;
+
+      const editionLookup: Record<string, JerseyItem['edition']> = {
+        icon: 'Icon',
+        statement: 'Statement',
+        association: 'Association',
+        city: 'City',
+      };
+
+      const editionEntry = Object.entries(editionLookup).find(([keyword]) => lower.includes(keyword));
+      const edition = editionEntry?.[1];
+
+      let matchedPlayer: string | undefined;
+      for (const name of playerNames) {
+        if (lower.includes(name.toLowerCase())) {
+          matchedPlayer = name;
+          break;
+        }
+      }
+
+      let matchingRows = rows;
+      if (edition) {
+        const editionLower = edition.toLowerCase();
+        matchingRows = matchingRows.filter((row) => row.edition.toLowerCase() === editionLower);
+      }
+      if (matchedPlayer) {
+        const playerLower = matchedPlayer.toLowerCase();
+        matchingRows = matchingRows.filter((row) => row.player_name.toLowerCase() === playerLower);
+      }
+
+      if (matchingRows.length === 0) {
+        if (edition && matchedPlayer) {
+          return `I don't have any ${edition} jerseys logged for ${matchedPlayer} right now.`;
+        }
+        if (edition) {
+          return `I don't have any ${edition} jerseys logged right now.`;
+        }
+        if (matchedPlayer) {
+          return `I don't have any jerseys logged for ${matchedPlayer} right now.`;
+        }
+        return `I don't have jersey inventory logged yet.`;
+      }
+
+      const totalOnHand = matchingRows.reduce((sum, row) => sum + (row.qty_inventory ?? 0), 0);
+      const totalDue = matchingRows.reduce((sum, row) => sum + (row.qty_due_lva ?? 0), 0);
+
+      const plural = totalOnHand === 1 ? 'jersey' : 'jerseys';
+      const editionLabel = edition ? `${edition} ` : '';
+      const playerSuffix = matchedPlayer ? ` for ${matchedPlayer}` : '';
+      let response = `We have ${totalOnHand.toLocaleString()} ${editionLabel}${plural}${playerSuffix} in inventory`;
+
+      if (totalDue > 0) {
+        const duePlural = totalDue === 1 ? 'jersey' : 'jerseys';
+        response += `, plus ${totalDue.toLocaleString()} ${duePlural} due to laundry`;
+      }
+
+      response += '.';
+      return response;
+    },
+    [playerNames, rows]
+  );
 
   const playBeep = () => {
     try {
@@ -290,6 +377,24 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
   const processVoiceCommand = async (transcript: string) => {
     if (!transcript.trim()) return;
     setIsProcessing(true);
+
+    const quickAnswer = answerInventoryQuery(transcript);
+    if (quickAnswer) {
+      setProcessingStep('interpreting');
+      speak(quickAnswer);
+      setMessages(prev => [...prev, { role: 'assistant' as const, content: quickAnswer }].slice(-10));
+      setProcessingStep('success');
+      setLastCommand(null);
+      setListening(false);
+      setIsProcessing(false);
+      setTranscript('');
+      setTimeout(() => {
+        setProcessingStep('idle');
+        setLastCommand(null);
+      }, 2200);
+      return;
+    }
+
     setProcessingStep('interpreting');
     try {
       const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
@@ -312,6 +417,10 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
                 total_items: rows.length,
                 low_stock: rows.filter(r => (r.qty_inventory ?? 0) <= 1).length,
                 total_inventory: rows.reduce((sum, r) => sum + (r.qty_inventory ?? 0), 0),
+                edition_totals: rows.reduce((acc, r) => {
+                  acc[r.edition] = (acc[r.edition] || 0) + (r.qty_inventory ?? 0);
+                  return acc;
+                }, {} as Record<string, number>),
               } : null
             }
           });
@@ -327,6 +436,10 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
                   total_items: rows.length,
                   low_stock: rows.filter(r => (r.qty_inventory ?? 0) <= 1).length,
                   total_inventory: rows.reduce((sum, r) => sum + (r.qty_inventory ?? 0), 0),
+                  edition_totals: rows.reduce((acc, r) => {
+                    acc[r.edition] = (acc[r.edition] || 0) + (r.qty_inventory ?? 0);
+                    return acc;
+                  }, {} as Record<string, number>),
                 } : null
               }
             });
