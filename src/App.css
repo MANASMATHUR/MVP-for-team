@@ -191,8 +191,8 @@
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.85rem;
+  justify-content: center;
+  padding: 0.45rem;
   font-size: 0.75rem;
   font-weight: 600;
   border-radius: 999px;
@@ -217,10 +217,6 @@
 .status-pill__icon {
   width: 16px;
   height: 16px;
-}
-
-.status-pill__text {
-  white-space: nowrap;
 }
 
 .header-chip {
