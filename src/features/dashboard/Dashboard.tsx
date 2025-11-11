@@ -568,13 +568,17 @@ export function Dashboard() {
       </div>
 
       {/* Large Centered MIC Dock */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center items-end pb-4">
+      <div className="mic-dock safe-area-bottom pointer-events-none">
         <div className="w-full max-w-xl mx-auto px-4">
-          <div className="rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
+          <div
+            className="pointer-events-auto rounded-full bg-white/75 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl"
+            style={{ boxShadow: '0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)' }}
+          >
             <VoiceMic
               rows={rows}
               onAction={async (command) => {
-                let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
+                let type: 'giveaway' | 'laundry' | 'receive' | undefined;
+                let q = 1;
                 if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
                 if (command.type === 'laundry_return') type = 'receive';
                 if (command.type === 'add') type = 'receive';
