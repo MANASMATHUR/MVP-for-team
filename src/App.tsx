@@ -66,6 +66,8 @@ function App() {
     return userEmail.length > 26 ? `${userEmail.slice(0, 23)}…` : userEmail;
   }, [userEmail]);
 
+  const statusLabel = isOnline ? 'Live sync online' : 'Offline mode';
+
   const tabs: Array<{
     id: TabKey;
     label: string;
@@ -127,15 +129,16 @@ function App() {
               <p className="brand-copy__title">Houston Inventory</p>
               <p className="brand-copy__subtitle">Locker room equipment hub</p>
             </div>
-            <span className="brand-badge">Updated</span>
           </div>
 
           <div className="app-header__meta">
             <span
               className={`status-pill ${isOnline ? 'status-pill--online' : 'status-pill--offline'}`}
+              role="status"
+              aria-label={statusLabel}
+              title={statusLabel}
             >
               {isOnline ? <Wifi className="status-pill__icon" /> : <WifiOff className="status-pill__icon" />}
-              <span className="status-pill__text">{isOnline ? 'Live sync' : 'Offline mode'}</span>
             </span>
 
             <button
