@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { transcribeAudio, interpretVoiceCommandWithAI, getConversationalReply, type VoiceCommand } from '../../integrations/openai';
 import type { JerseyItem } from '../../types';
 import { Mic, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
@@ -37,6 +37,21 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const lastAssistantReplyRef = useRef<string>('');
   const [hasGreeted, setHasGreeted] = useState(false);
+  const conversationPrompts = useMemo(
+    () => [
+      '“How many Icon jerseys are ready for tonight?”',
+      '“Log two jerseys to laundry for Jalen.”',
+      '“Which players are low on Statement edition?”',
+      '“Add three size 48 jerseys for Fred.”',
+      '“Summarize the current inventory health.”',
+    ],
+    []
+  );
+
+  const suggestionPrompts = useMemo(() => {
+    const picks = [...conversationPrompts];
+    return picks.sort(() => Math.random() - 0.5).slice(0, 3);
+  }, [conversationPrompts]);
 
   const playBeep = () => {
     try {
@@ -128,8 +143,12 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
     if (listening) return;
     if (!hasGreeted) {
       setHasGreeted(true);
-      speak("Hello! I'm your inventory assistant. Ask me anything—inventory or general.");
-      setMessages(prev => [...prev, { role: 'assistant' as const, content: "Hello! I'm your inventory assistant. Ask me anything—inventory or general." }].slice(-10));
+      const greeting =
+        "Hey there! I'm your locker room assistant. Ask me anything about jerseys, laundry, or even just say hi.";
+      speak(greeting);
+      setMessages(prev =>
+        [...prev, { role: 'assistant' as const, content: greeting }].slice(-10)
+      );
       return;
     }
     
@@ -368,7 +387,7 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
         setProcessingStep('error');
           }
         } else {
-          const fallback = "I'm here to help—ask about jerseys, or just chat with me!";
+        const fallback = "I'm here for anything you need—try asking about stock, laundries, or just keep me company!";
           speak(fallback);
           setMessages(prev => [...prev, { role: 'assistant' as const, content: fallback }].slice(-10));
           setProcessingStep('idle');
@@ -854,6 +873,17 @@ export function VoiceMic({ rows, onAction, locked = false, large = false }: Prop
             <div key={idx} className={`transcript-bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
               <span className="text">{m.content}</span>
             </div>
+          ))}
+        </div>
+      )}
+
+      {!listening && !isProcessing && messages.length === 0 && (
+        <div className={`mic-hints ${large ? 'mic-hints--wide' : ''}`} aria-label="Example voice commands">
+          <span className="mic-hints__label">Try saying</span>
+          {suggestionPrompts.map(prompt => (
+            <span key={prompt} className="mic-hints__chip">
+              {prompt}
+            </span>
           ))}
         </div>
       )}

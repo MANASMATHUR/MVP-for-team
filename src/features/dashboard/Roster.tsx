@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import type { JerseyItem } from '../../types';
 import toast from 'react-hot-toast';
 import { VoiceMic } from '../inventory/VoiceMic';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronRight, Clock3, MapPin, Package2 } from 'lucide-react';
+  const statusLabel = (status: 'ready' | 'low' | 'empty') => {
+    if (status === 'ready') return 'Ready';
+    if (status === 'low') return 'Low';
+    return 'Empty';
+  };
+
 
 export function Roster() {
   const [rows, setRows] = useState<JerseyItem[]>([]);
@@ -29,6 +33,44 @@ export function Roster() {
     }
     return Array.from(byPlayer.entries()).map(([name, s]) => ({ name, ready: s.ready, total: s.total }));
   }, [rows]);
+
+  const rosterSummary = useMemo(() => {
+    const totalPlayers = players.length;
+    const fullyReady = players.filter(p => p.ready === p.total && p.total > 0).length;
+    const jerseysDueLaundry = rows.reduce((sum, r) => sum + (r.qty_due_lva ?? 0), 0);
+    const lowStockStyles = rows.filter(r => r.qty_inventory <= 1).length;
+    return { totalPlayers, fullyReady, jerseysDueLaundry, lowStockStyles };
+  }, [players, rows]);
+
+  const quickMicPrompts = useMemo(
+    () => [
+      '“How many jerseys are ready for Alperen?”',
+      '“Send two Icon jerseys for Dillon to laundry.”',
+      '“Mark Jalen’s Statement jerseys as received.”',
+      '“Who is low on Association editions?”',
+    ],
+    []
+  );
+
+  const playerCards = useMemo(() => {
+    return players.map(player => {
+      const playerRows = rows.filter(r => r.player_name === player.name);
+      const styles = playerRows.length;
+      const onHand = playerRows.reduce((sum, r) => sum + (r.qty_inventory ?? 0), 0);
+      const low = playerRows.some(r => r.qty_inventory <= 1);
+      const hasInventory = onHand > 0;
+      const status: 'ready' | 'low' | 'empty' = low ? 'low' : hasInventory ? 'ready' : 'empty';
+      const numberMatch = player.name.match(/\d+/);
+      const avatar = numberMatch ? numberMatch[0] : player.name.slice(0, 2).toUpperCase();
+      return {
+        ...player,
+        styles,
+        onHand,
+        status,
+        avatar,
+      };
+    });
+  }, [players, rows]);
 
   const resolveTarget = (args: { player_name?: string; edition?: string; size?: string; quantity?: number }) => {
     const edition = args.edition || '';
@@ -84,46 +126,104 @@ export function Roster() {
     }
   };
 
+  const scrollToMic = useCallback(() => {
+    const micButton = document.querySelector<HTMLButtonElement>('.mic-dock button');
+    if (micButton) {
+      micButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      micButton.focus({ preventScroll: true });
+    }
+  }, []);
+
   return (
-    <div className="bg-gray-50 min-h-screen pt-3 pb-28 relative">
-      <div className="mx-3 mb-3 rounded-2xl bg-gray-900 p-4 shadow flex flex-col gap-2 text-white">
-        <div className="text-lg font-bold leading-snug">Next Game</div>
-        <div className="text-2xl font-black tracking-tight">vs Los Angeles Lakers</div>
-        <div className="flex text-sm gap-6 items-center mt-1 opacity-90">
-          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>Mon, Nov 3</span>
-          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>19:30</span>
-          <span className="flex items-center gap-1"><svg width="1em" height="1em" viewBox="0 0 20 20" fill="currentColor" className="inline align-middle text-gray-300"><circle cx="10" cy="10" r="10"/></svg>Home</span>
-          <span className="ml-auto"><span className="inline-block px-3 py-1 text-xs font-bold rounded-full bg-blue-600">Home</span></span>
-        </div>
-      </div>
-      <div className="mx-3 rounded-2xl bg-red-600 flex items-center justify-between p-4 mb-4 shadow text-white">
-        <div className="flex items-center gap-3">
-          <svg width="2em" height="2em" viewBox="0 0 20 20" fill="currentColor" className="text-white"><circle cx="10" cy="10" r="10" fill="#d32f2f"/><text x="10" y="15" textAnchor="middle" fontSize="13" fontWeight="bold" fill="white">!</text></svg>
-          <div>
-            <div className="font-bold text-lg">CRITICAL</div>
-            <div className="text-xs text-white/90">Players need jerseys</div>
+    <div className="roster-screen pt-3 pb-28">
+      <div className="roster-hero mx-3 mb-4">
+        <div className="roster-hero__main">
+          <div className="roster-hero__label">Next Game</div>
+          <h2 className="roster-hero__headline">vs Los Angeles Lakers</h2>
+          <div className="roster-hero__meta">
+            <span className="roster-hero__meta-pill">
+              <CalendarDays className="roster-hero__icon" />
+              Mon, Nov 3
+            </span>
+            <span className="roster-hero__meta-pill">
+              <Clock3 className="roster-hero__icon" />
+              19:30
+            </span>
+            <span className="roster-hero__meta-pill">
+              <MapPin className="roster-hero__icon" />
+              Toyota Center
+            </span>
+            <span className="roster-hero__badge">Home</span>
           </div>
         </div>
-        <div className="flex flex-col items-end">
-          <div className="font-black text-3xl text-white">2/5</div>
-          <div className="text-xs">Players Ready</div>
+        <div className="roster-hero__snapshot">
+          <div className="roster-hero__snapshot-label">Locker room snapshot</div>
+          <div className="roster-hero__snapshot-metric">
+            <span className="roster-hero__snapshot-number">{rosterSummary.fullyReady}</span>
+            <span className="roster-hero__snapshot-text">Players ready</span>
+            <span className="roster-hero__snapshot-total">/ {rosterSummary.totalPlayers}</span>
+          </div>
+          <div className="roster-hero__snapshot-chips">
+            <span className="roster-hero__chip roster-hero__chip--green">
+              {rosterSummary.jerseysDueLaundry} awaiting laundry
+            </span>
+            <span className="roster-hero__chip roster-hero__chip--yellow">
+              {rosterSummary.lowStockStyles} styles low
+            </span>
+          </div>
+          <div className="roster-hero__mic-hints">
+            {quickMicPrompts.slice(0, 2).map(prompt => (
+              <span key={prompt} className="roster-hero__mic-chip">
+                🎙 {prompt}
+              </span>
+            ))}
+            <button type="button" onClick={scrollToMic} className="roster-hero__mic-button">
+              Open mic
+            </button>
+          </div>
         </div>
       </div>
-      <div className="font-bold text-lg px-4 pt-1 pb-3">Team Roster</div>
-      <div className="space-y-4 px-2 pb-8">
-        {players.map((p, i) => (
-          <button key={p.name} className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-md hover:shadow-lg transition p-4 flex items-center justify-between gap-4" onClick={() => setActivePlayer(p.name)}>
-            <span className="flex items-center gap-4">
-              <span className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl bg-blue-600 text-white shadow-inner">{p.name.match(/\d+/)?.[0] || ((p.name.charCodeAt(0) + i*2) % 99) }</span>
-              <span className="flex flex-col">
-                <span className="font-bold text-base leading-tight text-gray-900">{p.name}</span>
-                <span className="text-xs text-gray-500 mt-1">{p.total} styles &nbsp; &bull; &nbsp; {p.ready} Home</span>
-              </span>
-            </span>
-            <span className="flex gap-3 items-center">
-              <span className={`h-5 w-5 rounded-full border-2 ${p.ready > 0 ? 'bg-green-400 border-green-700' : p.ready === 0 ? 'bg-red-400 border-red-700' : 'bg-yellow-400 border-yellow-600'}`}></span>
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </span>
+
+      <div className="roster-critical mx-3 mb-4">
+        <div className="roster-critical__content">
+          <span className="roster-critical__label">Critical</span>
+          <p className="roster-critical__text">Players need jerseys</p>
+        </div>
+        <div className="roster-critical__metric">
+          <span>{rosterSummary.fullyReady}</span>
+          <small>/ {rosterSummary.totalPlayers}</small>
+        </div>
+      </div>
+
+      <div className="roster-section-heading px-4">Team Roster</div>
+      <div className="roster-list px-3 pb-8">
+        {playerCards.map(card => (
+          <button
+            key={card.name}
+            className="roster-player-card"
+            onClick={() => setActivePlayer(card.name)}
+            aria-label={`Open details for ${card.name}`}
+          >
+            <div className="roster-player-card__left">
+              <span className="roster-player-avatar">{card.avatar}</span>
+              <div className="roster-player-body">
+                <p className="roster-player-name">{card.name}</p>
+                <span className="roster-player-meta">
+                  <span className="roster-player-meta__item">
+                    <Package2 className="roster-player-meta__icon" />
+                    {card.styles} styles
+                  </span>
+                  <span className="roster-player-meta__divider">•</span>
+                  <span className="roster-player-meta__item">{card.onHand} home</span>
+                </span>
+              </div>
+            </div>
+            <div className="roster-player-card__right">
+              <div className={`roster-player-status roster-player-status--${card.status}`} title={statusLabel(card.status)}>
+                <span />
+              </div>
+              <ChevronRight className="roster-player-chevron" />
+            </div>
           </button>
         ))}
       </div>
@@ -136,53 +236,86 @@ export function Roster() {
             </SheetDescription>
           </SheetHeader>
           <div className="space-y-4 sm:space-y-6 px-3 sm:px-4 pb-4 sm:pb-6 overflow-y-auto flex-1 min-h-0 pt-4">
-              {rows.filter(r => r.player_name === activePlayer).map((r, idx) => (
-                <div key={r.id || idx} className="rounded-2xl bg-white shadow-md p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
-                  <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                    <span className="text-base sm:text-lg font-bold text-gray-900">{r.edition} Edition</span>
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-300">{r.size}</Badge>
+              {rows.filter(r => r.player_name === activePlayer).map((r, idx) => {
+                const locker = r.qty_locker ?? 0;
+                const closet = r.qty_closet ?? 0;
+                const laundry = r.qty_due_lva ?? 0;
+                const inventory = r.qty_inventory ?? 0;
+                const projected = inventory + closet + laundry;
+                const minRequired = Math.max(1, locker || closet || 1);
+                const status: 'ready' | 'low' | 'empty' =
+                  inventory <= 0 ? 'empty' : inventory <= 1 ? 'low' : 'ready';
+                const qtyOptions = [1, 2, 3, 5];
+                const prompts = quickMicPrompts.slice(0, 3);
+                return (
+                <div key={r.id || idx} className="roster-sheet-card">
+                  <div className="roster-sheet-card__header">
+                    <div>
+                      <p className="roster-sheet-card__title">{r.edition} Edition</p>
+                      <p className="roster-sheet-card__subtitle">
+                        {r.size ? `Size ${r.size}` : 'Standard fit'} • {inventory} on hand
+                      </p>
+                    </div>
+                    <div className={`roster-player-status roster-player-status--${status}`} title={statusLabel(status)}>
+                      <span />
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-between mt-0.5 sm:mt-1">
-                    <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-900">Locker: {r.qty_locker ?? 0} / 3</Badge>
-                    <Badge variant="outline" className="bg-yellow-50 border-yellow-300 text-yellow-900">Closet: {r.qty_closet ?? 0} / 5</Badge>
-                    <Badge variant="outline" className="bg-gray-100 border-gray-300 text-gray-700">Min Required: <span className="font-bold ml-1">2</span></Badge>
-                    <Badge variant="outline" className="bg-gray-100 border-gray-300 text-gray-700">Projected: <span className="font-bold ml-1">7</span></Badge>
+                  <div className="roster-sheet-card__meta">
+                    <span>
+                      Min Required: <strong>{minRequired}</strong>
+                    </span>
+                    <span>
+                      Projected: <strong>{projected}</strong>
+                    </span>
                   </div>
-                  <div className="flex gap-2 sm:gap-3 mt-0.5 sm:mt-1">
-                    <Badge variant="outline" className="bg-indigo-50 border-indigo-200 text-indigo-900">Laundry: {r.qty_due_lva ?? 0}</Badge>
-                    <Badge variant="outline" className="bg-gray-50 border-gray-200 text-gray-700">In Transit: 0</Badge>
+                  <div className="roster-sheet-card__grid">
+                    <div className="roster-sheet-card__grid-item">
+                      <span>Locker</span>
+                      <strong>{locker} / 3</strong>
+                    </div>
+                    <div className="roster-sheet-card__grid-item">
+                      <span>Closet</span>
+                      <strong>{closet} / 5</strong>
+                    </div>
+                    <div className="roster-sheet-card__grid-item">
+                      <span>Laundry</span>
+                      <strong>{laundry}</strong>
+                    </div>
+                    <div className="roster-sheet-card__grid-item">
+                      <span>In Transit</span>
+                      <strong>0</strong>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-2 sm:mt-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <span className="text-xs text-gray-700 font-medium">Qty</span>
+                  <div className="roster-sheet-card__qty-row">
+                    <div className="roster-sheet-card__qty">
+                      <span className="roster-sheet-card__qty-label">Qty</span>
                       <input
                         type="number"
                         min={1}
-                        max={r.qty_inventory ?? 100}
+                        max={inventory || 100}
                         value={qty}
                         onChange={e => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-                        className="inline-block w-14 sm:w-16 rounded-lg border border-gray-300 text-sm sm:text-base px-1.5 sm:px-2 py-1 text-center font-bold ring-1 ring-inset ring-blue-200 bg-gray-50 focus:outline-none focus:ring-blue-400 focus:border-blue-400"
+                        className="roster-sheet-card__qty-input"
                         style={{ WebkitAppearance: 'none', MozAppearance: 'textfield' }}
                       />
-                      {[1,2,3,5].map(n => (
-                        <Button
+                      {qtyOptions.map(n => (
+                        <button
                           key={n}
-                          variant={qty === n ? "default" : "outline"}
-                          size="sm"
-                          className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs h-auto ${qty === n ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700' : ''}`}
+                          type="button"
+                          className={`roster-sheet-card__qty-chip ${qty === n ? 'is-active' : ''}`}
                           onClick={() => setQty(n)}
                         >
                           {n}
-                        </Button>
+                        </button>
                       ))}
                     </div>
-                    <div className="ml-auto">
+                    <div className="roster-sheet-card__voice">
                       <VoiceMic
                         rows={[r]}
-              onAction={async (command) => {
+                        onAction={async (command) => {
                           let type: 'giveaway'|'laundry'|'receive'|undefined, q = 1;
-                if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
-                if (command.type === 'laundry_return') type = 'receive';
+                          if (command.type === 'turn_in' || command.type === 'remove' || command.type === 'delete') type = 'giveaway';
+                          if (command.type === 'laundry_return') type = 'receive';
                           if (command.type === 'add') type = 'receive';
                           if (command.type === 'set' || command.type === 'order') type = undefined;
                           q = Number(command.quantity || command.target_quantity || qty || 1);
@@ -192,33 +325,45 @@ export function Roster() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
-                    <Button
-                      variant="destructive"
-                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl"
+                  <div className="roster-sheet-card__prompts">
+                    <span className="roster-sheet-card__prompts-label">Try saying</span>
+                    <div className="roster-sheet-card__prompts-chips">
+                      {prompts.map(prompt => (
+                        <span key={prompt} className="roster-sheet-card__prompt-chip">
+                          {prompt.replace(/(^“|”$)/g, '')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="roster-sheet-card__actions">
+                    <button
+                      type="button"
+                      className="roster-sheet-card__action roster-sheet-card__action--give"
                       onClick={() => updateRow('giveaway', r, qty)}
                     >
                       Give Away
-                    </Button>
-                    <Button
-                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl bg-blue-600 hover:bg-blue-700 text-white"
+                    </button>
+                    <button
+                      type="button"
+                      className="roster-sheet-card__action roster-sheet-card__action--laundry"
                       onClick={() => updateRow('laundry', r, qty)}
                     >
                       To Laundry
-                    </Button>
-                    <Button
-                      className="w-full py-2.5 sm:py-3 h-auto text-sm sm:text-base font-extrabold rounded-xl bg-green-600 hover:bg-green-700 text-white"
+                    </button>
+                    <button
+                      type="button"
+                      className="roster-sheet-card__action roster-sheet-card__action--receive"
                       onClick={() => updateRow('receive', r, qty)}
                     >
                       Receive
-                    </Button>
+                    </button>
                   </div>
                 </div>
-              ))}
+              )})}
           </div>
         </SheetContent>
       </Sheet>
-      <div className="mic-dock pointer-events-none">
+      <div className="mic-dock safe-area-bottom pointer-events-none">
         <div className="w-full max-w-xl mx-auto">
           <div className="pointer-events-auto rounded-full bg-white/70 backdrop-blur ring-1 ring-blue-300 border border-blue-100 flex justify-center items-center py-3 shadow-2xl" style={{boxShadow:'0 10px 28px rgba(24,102,255,0.18),0 4px 24px rgba(65,0,150,0.14)'}}>
             <VoiceMic
