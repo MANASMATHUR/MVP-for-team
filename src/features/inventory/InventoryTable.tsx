@@ -296,7 +296,11 @@ export function InventoryTable() {
     await updateField(row, { qty_inventory: newInventory, qty_due_lva: newDueLva });
   };
 
-  const updateField = async (row: Row, fields: Partial<Row>) => {
+  const updateField = async (
+    row: Row,
+    fields: Partial<Row>,
+    options?: { successMessage?: string; silent?: boolean }
+  ) => {
     // Validate the updated data
     const updatedData = { ...row, ...fields };
     const validation = validateJerseyData(updatedData);
@@ -349,7 +353,9 @@ export function InventoryTable() {
       setRows((prev) => prev.map((r) => (r.id === row.id ? row : r)));
       toast.error('Failed to update inventory item');
     } else {
-      toast.success('Inventory updated successfully');
+      if (!options?.silent) {
+        toast.success(options?.successMessage ?? 'Inventory updated successfully');
+      }
     }
 
     // Low stock notify (client-side MVP)
@@ -553,6 +559,48 @@ export function InventoryTable() {
     const qty = Math.max(0, Math.min(row.qty_inventory, Number(qtyStr) || 0));
     if (qty <= 0) return;
     await updateField(row, { qty_inventory: row.qty_inventory - qty, qty_due_lva: row.qty_due_lva + qty });
+  };
+
+  const handleMobileAction = async (row: Row, action: 'give' | 'laundry' | 'receive') => {
+    if (action === 'give') {
+      if (row.qty_inventory <= 0) {
+        toast.error('No jerseys on hand to give away.');
+        return;
+      }
+      await updateField(
+        row,
+        { qty_inventory: Math.max(0, row.qty_inventory - 1) },
+        { successMessage: 'Recorded giveaway of 1 jersey' }
+      );
+      return;
+    }
+
+    if (action === 'laundry') {
+      if (row.qty_inventory <= 0) {
+        toast.error('Nothing available to send to laundry.');
+        return;
+      }
+      await updateField(
+        row,
+        {
+          qty_inventory: Math.max(0, row.qty_inventory - 1),
+          qty_due_lva: (row.qty_due_lva ?? 0) + 1,
+        },
+        { successMessage: 'Sent 1 jersey to laundry' }
+      );
+      return;
+    }
+
+    if (action === 'receive') {
+      await updateField(
+        row,
+        {
+          qty_inventory: row.qty_inventory + 1,
+          qty_due_lva: Math.max(0, (row.qty_due_lva ?? 0) - 1),
+        },
+        { successMessage: 'Received 1 jersey back' }
+      );
+    }
   };
 
   if (loading) {
@@ -1580,34 +1628,102 @@ export function InventoryTable() {
       />
 
       {/* Mobile Cards View (visible only on mobile) */}
-      <div className="sm:hidden space-y-6 px-2 pb-8">
-        {filtered.map((r) => (
-          <div key={r.id} className="rounded-2xl bg-white shadow-md p-4 flex flex-col gap-3">
-            {/* Header and Style Title */}
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-lg font-bold text-gray-900">{r.edition} Edition</span>
-              <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-3 py-1 text-xs font-bold shadow">{r.size} • {r.player_name}</span>
+      <div className="sm:hidden space-y-5 px-2 pb-10">
+        {filtered.map((r) => {
+          const updatedAt = new Date(r.updated_at);
+          const updatedLabel = `${updatedAt.toLocaleDateString()} • ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          const locker = r.qty_locker ?? 0;
+          const closet = r.qty_closet ?? 0;
+          const canGive = r.qty_inventory > 0;
+          const canLaundry = r.qty_inventory > 0;
+          const canReceive = (r.qty_due_lva ?? 0) > 0;
+
+          return (
+            <div
+              key={r.id}
+              className="rounded-3xl bg-white/90 shadow-xl ring-1 ring-slate-200/60 backdrop-blur-sm p-5 space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <p className="text-lg font-bold text-slate-900 truncate">{r.player_name}</p>
+                  <p className="text-sm font-medium text-slate-500">
+                    {r.edition} • Size {r.size}
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm ${
+                    r.qty_inventory <= 1
+                      ? 'bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700 border border-rose-300'
+                      : 'bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-700 border border-emerald-300'
+                  }`}
+                >
+                  {r.qty_inventory <= 1 ? 'Low Stock' : 'Ready'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-2xl bg-slate-50 px-3 py-3 shadow-inner">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">On Hand</p>
+                  <p className="text-2xl font-bold text-slate-900">{r.qty_inventory}</p>
+                </div>
+                <div className="rounded-2xl bg-indigo-50 px-3 py-3 shadow-inner">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Laundry</p>
+                  <p className="text-2xl font-bold text-indigo-900">{r.qty_due_lva ?? 0}</p>
+                </div>
+                <div className="rounded-2xl bg-sky-50 px-3 py-3 shadow-inner">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Locker • Closet</p>
+                  <p className="text-sm font-bold text-sky-900">
+                    {locker} • {closet}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400">
+                <span>{updatedLabel}</span>
+                <span>{r.updated_by || 'Auto'}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleMobileAction(r, 'give')}
+                  disabled={!canGive}
+                  className={`rounded-2xl py-2.5 text-xs font-extrabold tracking-wide uppercase transition shadow-md ${
+                    canGive
+                      ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-rose-500/40 active:scale-[0.98]'
+                      : 'bg-rose-100 text-rose-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  Give Away
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMobileAction(r, 'laundry')}
+                  disabled={!canLaundry}
+                  className={`rounded-2xl py-2.5 text-xs font-extrabold tracking-wide uppercase transition shadow-md ${
+                    canLaundry
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-indigo-500/40 active:scale-[0.98]'
+                      : 'bg-blue-100 text-blue-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  To Laundry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMobileAction(r, 'receive')}
+                  disabled={!canReceive}
+                  className={`rounded-2xl py-2.5 text-xs font-extrabold tracking-wide uppercase transition shadow-md ${
+                    canReceive
+                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-500/40 active:scale-[0.98]'
+                      : 'bg-emerald-100 text-emerald-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  Receive
+                </button>
+              </div>
             </div>
-            {/* Min/Projected/Locker/Closet Pills */}
-            <div className="flex flex-wrap gap-2 justify-between">
-              <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Min Required: <span className="font-bold ml-1">2</span></span>
-              <span className="inline-flex items-center font-medium bg-gray-100 rounded-full px-3 py-1 text-xs">Projected: <span className="font-bold ml-1">7</span></span>
-              <span className="inline-flex items-center font-bold bg-blue-50 border border-blue-300 rounded-full px-3 py-1 text-xs">Locker: {r.qty_locker ?? 0} / 3</span>
-              <span className="inline-flex items-center font-bold bg-yellow-50 border border-yellow-300 rounded-full px-3 py-1 text-xs">Closet: {r.qty_closet ?? 0} / 5</span>
-            </div>
-            {/* Laundry / In Transit Pills */}
-            <div className="flex gap-3">
-              <span className="inline-flex items-center font-bold bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-xs">Laundry: {r.qty_due_lva ?? 0}</span>
-              <span className="inline-flex items-center font-bold bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs">In Transit: 0</span>
-            </div>
-            {/* Main Action Buttons (full-width, spaced) */}
-            <div className="grid grid-cols-1 gap-2 mt-3">
-              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-red-600 active:scale-[0.99] shadow-lg">Give Away</button>
-              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-blue-600 active:scale-[0.99] shadow-lg">To Laundry</button>
-              <button className="w-full py-3 rounded-xl font-extrabold text-white bg-green-600 active:scale-[0.99] shadow-lg">Receive</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Add Modal */}
