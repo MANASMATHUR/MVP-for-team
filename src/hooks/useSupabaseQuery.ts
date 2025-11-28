@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabaseClient';
 import { useErrorHandler } from './useErrorHandler';
 
 interface UseSupabaseQueryOptions<T> {
@@ -23,6 +22,7 @@ interface UseSupabaseQueryResult<T> {
  * Custom hook for Supabase queries with built-in error handling and loading states
  * 
  * @example
+ * import { supabase } from '../lib/supabaseClient';
  * const { data, loading, error, refetch } = useSupabaseQuery({
  *   queryFn: () => supabase.from('jerseys').select('*'),
  *   errorContext: 'Failed to load jerseys'
