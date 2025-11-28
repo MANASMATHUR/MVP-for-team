@@ -7,7 +7,7 @@ import { LogsPanel } from './features/logs/LogsPanel';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { Roster } from './features/dashboard/Roster';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from './lib/supabaseClient';
 import {
   Bell,
@@ -33,15 +33,28 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.auth.getUser();
-      setUserEmail(data.user?.email ?? '');
+      try {
+        const { data, error: userError } = await supabase.auth.getUser();
+        if (userError) {
+          console.error('Error fetching user:', userError);
+          return;
+        }
+        setUserEmail(data.user?.email ?? '');
 
-      const { data: lowStockItems } = await supabase
-        .from('jerseys')
-        .select('*')
-        .lte('qty_inventory', 1);
+        const { data: lowStockItems, error: stockError } = await supabase
+          .from('jerseys')
+          .select('*')
+          .lte('qty_inventory', 1);
 
-      setNotifications(lowStockItems?.length || 0);
+        if (stockError) {
+          console.error('Error fetching low stock items:', stockError);
+          return;
+        }
+
+        setNotifications(lowStockItems?.length || 0);
+      } catch (error) {
+        console.error('Unexpected error in App initialization:', error);
+      }
     })();
 
     const handleOnline = () => setIsOnline(true);
@@ -66,7 +79,7 @@ function App() {
     return userEmail.length > 26 ? `${userEmail.slice(0, 23)}…` : userEmail;
   }, [userEmail]);
 
-  const statusLabel = isOnline ? 'Live sync online' : 'Offline mode';
+  const statusLabel = useMemo(() => isOnline ? 'Live sync online' : 'Offline mode', [isOnline]);
 
   const tabs: Array<{
     id: TabKey;
@@ -75,26 +88,27 @@ function App() {
     badge?: number;
     hint?: string;
     primary?: boolean;
-  }> = [
+  }> = useMemo(() => [
     { id: 'roster', label: 'Roster', icon: Users, hint: 'Players & styles', primary: true },
     { id: 'dashboard', label: 'Insights', icon: BarChart3, hint: 'Metrics overview' },
     { id: 'inventory', label: 'Inventory', icon: Package, hint: 'Full catalogue' },
     { id: 'settings', label: 'Settings', icon: Settings, hint: 'Team preferences' },
     { id: 'logs', label: 'Alerts', icon: Bell, badge: notifications, hint: 'Recent activity' },
-  ];
+  ], [notifications]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     if (isSigningOut) return;
     try {
       setIsSigningOut(true);
       await supabase.auth.signOut();
       location.reload();
-    } finally {
+    } catch (error) {
+      console.error('Error signing out:', error);
       setIsSigningOut(false);
     }
-  };
+  }, [isSigningOut]);
 
-  const renderTabContent = () => {
+  const renderTabContent = useCallback(() => {
     switch (tab) {
       case 'dashboard':
         return <Dashboard />;
@@ -108,7 +122,7 @@ function App() {
       default:
         return <Roster />;
     }
-  };
+  }, [tab]);
 
   return (
     <AuthGate>
@@ -122,6 +136,12 @@ function App() {
               className="brand-sigil"
               onClick={() => setTab('dashboard')}
               aria-label="Go to dashboard"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setTab('dashboard');
+                }
+              }}
             >
               <img src={rocketsLogo} alt="Houston Rockets logo" loading="lazy" />
             </button>
@@ -175,13 +195,17 @@ function App() {
           </div>
         </header>
 
-        <nav className="desktop-tab-bar" aria-label="Primary navigation">
+        <nav className="desktop-tab-bar" aria-label="Primary navigation" role="tablist">
           {tabs.map(({ id, label, icon: Icon, badge, hint }) => (
             <button
               key={id}
               type="button"
               className={`desktop-tab ${tab === id ? 'is-active' : ''}`}
               onClick={() => setTab(id)}
+              role="tab"
+              aria-selected={tab === id}
+              aria-label={hint ? `${label}: ${hint}` : label}
+              tabIndex={tab === id ? 0 : -1}
             >
               <Icon className="desktop-tab__icon" />
               <div className="desktop-tab__meta">
