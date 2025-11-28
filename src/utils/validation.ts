@@ -1,9 +1,16 @@
+import { VALID_EDITIONS, MAX_INVENTORY_WARNING, MAX_LVA_WARNING } from '../constants';
+
 export interface ValidationResult {
   isValid: boolean;
   errors: string[];
   warnings: string[];
 }
 
+/**
+ * Validates jersey data for completeness and correctness
+ * @param data - The jersey data to validate
+ * @returns Validation result with errors and warnings
+ */
 export function validateJerseyData(data: {
   player_name: string;
   edition: string;
@@ -46,18 +53,17 @@ export function validateJerseyData(data: {
   }
 
   // Warning for high quantities
-  if (data.qty_inventory > 100) {
-    warnings.push('Inventory quantity seems unusually high (>100)');
+  if (data.qty_inventory > MAX_INVENTORY_WARNING) {
+    warnings.push(`Inventory quantity seems unusually high (>${MAX_INVENTORY_WARNING})`);
   }
 
-  if (data.qty_due_lva > 50) {
-    warnings.push('LVA quantity seems unusually high (>50)');
+  if (data.qty_due_lva > MAX_LVA_WARNING) {
+    warnings.push(`LVA quantity seems unusually high (>${MAX_LVA_WARNING})`);
   }
 
   // Edition validation
-  const validEditions = ['Icon', 'Statement', 'Association', 'City'];
-  if (data.edition && !validEditions.includes(data.edition)) {
-    errors.push(`Edition must be one of: ${validEditions.join(', ')}`);
+  if (data.edition && !VALID_EDITIONS.includes(data.edition as typeof VALID_EDITIONS[number])) {
+    errors.push(`Edition must be one of: ${VALID_EDITIONS.join(', ')}`);
   }
 
   // Size validation (basic)
