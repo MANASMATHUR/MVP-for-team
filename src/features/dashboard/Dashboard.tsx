@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, getCurrentUserEmail } from '../../lib/supabaseClient';
 import { Package, AlertTriangle, TrendingUp, CheckCircle, Users, Activity, Zap, Sparkles, Copy, Mail, ChevronDown } from 'lucide-react';
 import { analyzeInventory, buildReorderEmailDraft, buildReorderEmailDraftAI } from '../../integrations/openai';
 import { copyEmailToClipboard, openEmailClient } from '../../utils/emailUtils';
@@ -33,7 +33,7 @@ function ReorderEmailButton() {
 
   const generateEmailData = async () => {
     if (emailData) return emailData;
-    
+
     setIsGenerating(true);
     try {
       const { data: settings } = await supabase.from('settings').select('low_stock_threshold, reorder_email_recipient').single();
@@ -41,7 +41,7 @@ function ReorderEmailButton() {
       const recipient = settings?.reorder_email_recipient;
       const { data: jerseys } = await supabase.from('jerseys').select('*');
       const lowStock = (jerseys || []).filter((j: any) => j.qty_inventory <= threshold);
-      
+
       if (lowStock.length === 0) {
         toast.success('No low stock items to reorder');
         return null;
@@ -58,12 +58,12 @@ function ReorderEmailButton() {
         size: item.size,
         qty_needed: Math.max(1, (threshold - item.qty_inventory) || 1)
       })).join('\n\n---\n\n');
-      
+
       const polished = await buildReorderEmailDraftAI(plainBlocks);
       const subjectMatch = polished.match(/^Subject:\s*(.*)$/m);
       const subject = subjectMatch ? subjectMatch[1] : `Jersey Reorder Request - ${new Date().toLocaleDateString()}`;
       const body = polished.replace(/^Subject:.*\n?/, '');
-      
+
       const data = { subject, body, recipient, itemCount: lowStock.length };
       setEmailData(data);
       return data;
@@ -84,7 +84,7 @@ function ReorderEmailButton() {
   const handleCopy = async () => {
     const data = await generateEmailData();
     if (!data) return;
-    
+
     const success = await copyEmailToClipboard(data.subject, data.body, data.recipient);
     if (success) {
       toast.success(`Reorder email copied to clipboard (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
@@ -96,7 +96,7 @@ function ReorderEmailButton() {
   const handleOpenInOutlook = async () => {
     const data = await generateEmailData();
     if (!data) return;
-    
+
     openEmailClient(data.recipient, data.subject, data.body);
     toast.success(`Reorder email opened in email app (${data.itemCount} item${data.itemCount === 1 ? '' : 's'})`);
   };
@@ -125,11 +125,11 @@ function ReorderEmailButton() {
       {emailData && (
         <>
           {/* Backdrop */}
-          <div 
-            className="fixed inset-0 z-10" 
+          <div
+            className="fixed inset-0 z-10"
             onClick={() => setEmailData(null)}
           />
-          
+
           {/* Dropdown Menu */}
           <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-20">
             <div className="py-1">
@@ -248,7 +248,7 @@ export function Dashboard() {
           acc[jersey.edition] = (acc[jersey.edition] || 0) + 1;
           return acc;
         }, {});
-        const mostPopularEdition = Object.entries(editionCounts).reduce((a, b) => 
+        const mostPopularEdition = Object.entries(editionCounts).reduce((a, b) =>
           editionCounts[a[0]] > editionCounts[b[0]] ? a : b
         )[0];
         const efficiencyScore = Math.round(
@@ -331,7 +331,7 @@ export function Dashboard() {
       <div className="flex flex-col items-center justify-center h-64 space-y-4">
         <div className="relative">
           <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-          <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-t-blue-400 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '0.8s'}}></div>
+          <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-t-blue-400 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.8s' }}></div>
         </div>
         <div className="text-center">
           <p className="text-lg font-semibold text-gray-700">Loading Dashboard</p>
@@ -500,8 +500,7 @@ export function Dashboard() {
                 const size = window.prompt('Size?', '48') || '48';
                 const inv = parseInt(window.prompt('Inventory qty?', '0') || '0', 10) || 0;
                 const lva = parseInt(window.prompt('Due to LVA qty?', '0') || '0', 10) || 0;
-                const { data: userRes } = await supabase.auth.getUser();
-                const updatedBy = userRes.user?.email ?? null;
+                const updatedBy = await getCurrentUserEmail();
                 const { error } = await supabase
                   .from('jerseys')
                   .insert({

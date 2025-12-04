@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, getCurrentUserEmail } from '../../lib/supabaseClient';
 import type { Settings } from '../../types';
 import { notifyLowStock } from '../../integrations/make';
 import { generateInventoryReport, suggestInventoryImprovements } from '../../integrations/openai';
@@ -54,8 +54,7 @@ export function SettingsPanel() {
 
   const loadUserPreferences = async () => {
     try {
-      const { data: userRes } = await supabase.auth.getUser();
-      const email = userRes.user?.email || '';
+      const email = await getCurrentUserEmail() || '';
       setUserEmail(email);
 
       const { data: preferences } = await supabase
@@ -83,7 +82,7 @@ export function SettingsPanel() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-    await supabase.from('settings').upsert({ id: 1, ...settings });
+      await supabase.from('settings').upsert({ id: 1, ...settings });
       toast.success('Settings saved successfully');
     } catch (error) {
       toast.error('Failed to save settings');
@@ -112,13 +111,13 @@ export function SettingsPanel() {
 
   const testLowStockAlert = async () => {
     try {
-            await notifyLowStock({
-              id: 'test',
-              player_name: 'Test Player',
-              edition: 'Icon',
-              size: '48',
-              qty_inventory: settings.low_stock_threshold,
-            });
+      await notifyLowStock({
+        id: 'test',
+        player_name: 'Test Player',
+        edition: 'Icon',
+        size: '48',
+        qty_inventory: settings.low_stock_threshold,
+      });
       toast.success('Test low-stock alert sent successfully');
     } catch (error) {
       toast.error('Failed to send test alert');
@@ -147,7 +146,7 @@ export function SettingsPanel() {
     try {
       toast.loading('Generating report...', { id: 'report' });
       const report = await generateInventoryReport();
-      
+
       // Create and download the report
       const content = report && report.length > 0 ? report : 'No report content generated.';
       const blob = new Blob([content], { type: 'text/plain' });
@@ -159,7 +158,7 @@ export function SettingsPanel() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Report generated and downloaded', { id: 'report' });
     } catch (error) {
       const message = (error as any)?.message || 'Failed to generate report';
@@ -184,7 +183,7 @@ export function SettingsPanel() {
               {/* Notification Settings */}
               <div className="border-b border-gray-100 pb-6 last:border-0">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Notification Settings</h3>
-                
+
                 <div className="space-y-5">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -229,7 +228,7 @@ export function SettingsPanel() {
                 <p className="text-sm text-gray-600 mb-4">
                   Automatic email delivery status
                 </p>
-                
+
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <span className="text-sm text-gray-700">Service ID</span>
@@ -237,33 +236,30 @@ export function SettingsPanel() {
                       <span className="text-xs text-gray-500 font-mono">
                         {import.meta.env.VITE_EMAILJS_SERVICE_ID ? 'Configured' : 'Not set'}
                       </span>
-                      <div className={`w-2 h-2 rounded-full ${
-                        import.meta.env.VITE_EMAILJS_SERVICE_ID ? 'bg-green-500' : 'bg-red-500'
-                      }`}></div>
+                      <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_EMAILJS_SERVICE_ID ? 'bg-green-500' : 'bg-red-500'
+                        }`}></div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <span className="text-sm text-gray-700">Template ID</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 font-mono">
                         {import.meta.env.VITE_EMAILJS_TEMPLATE_ID ? 'Configured' : 'Not set'}
                       </span>
-                      <div className={`w-2 h-2 rounded-full ${
-                        import.meta.env.VITE_EMAILJS_TEMPLATE_ID ? 'bg-green-500' : 'bg-red-500'
-                      }`}></div>
+                      <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_EMAILJS_TEMPLATE_ID ? 'bg-green-500' : 'bg-red-500'
+                        }`}></div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <span className="text-sm text-gray-700">Public Key</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 font-mono">
                         {import.meta.env.VITE_EMAILJS_USER_ID ? 'Configured' : 'Not set'}
                       </span>
-                      <div className={`w-2 h-2 rounded-full ${
-                        import.meta.env.VITE_EMAILJS_USER_ID ? 'bg-green-500' : 'bg-red-500'
-                      }`}></div>
+                      <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_EMAILJS_USER_ID ? 'bg-green-500' : 'bg-red-500'
+                        }`}></div>
                     </div>
                   </div>
                 </div>
@@ -275,9 +271,9 @@ export function SettingsPanel() {
 
               {/* Actions */}
               <div className="flex gap-3">
-                <button 
+                <button
                   className="btn btn-primary"
-                  disabled={saving} 
+                  disabled={saving}
                   onClick={saveSettings}
                 >
                   <Save className="h-4 w-4" />
@@ -302,7 +298,7 @@ export function SettingsPanel() {
             <h3 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide text-xs">
               System Status
             </h3>
-            
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Supabase</span>
@@ -310,21 +306,19 @@ export function SettingsPanel() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">OpenAI API</span>
-                <div className={`w-2 h-2 rounded-full ${
-                  import.meta.env.VITE_OPENAI_API_KEY ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
+                <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_OPENAI_API_KEY ? 'bg-green-500' : 'bg-red-500'
+                  }`}></div>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Make.com</span>
-                <div className={`w-2 h-2 rounded-full ${
-                  import.meta.env.VITE_MAKE_WEBHOOK_URL ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
+                <div className={`w-2 h-2 rounded-full ${import.meta.env.VITE_MAKE_WEBHOOK_URL ? 'bg-green-500' : 'bg-red-500'
+                  }`}></div>
               </div>
             </div>
 
-            <button 
-              className="btn btn-sm btn-outline w-full mt-4" 
-              onClick={runDiagnostics} 
+            <button
+              className="btn btn-sm btn-outline w-full mt-4"
+              onClick={runDiagnostics}
               disabled={diagRunning}
             >
               <Activity className="h-4 w-4" />
@@ -337,7 +331,7 @@ export function SettingsPanel() {
             <h3 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide text-xs">
               Actions
             </h3>
-            
+
             <div className="space-y-3">
               <button
                 className="btn btn-outline w-full justify-start"
@@ -346,7 +340,7 @@ export function SettingsPanel() {
                 <Download className="h-4 w-4" />
                 Download Report
               </button>
-              
+
               <button
                 className="btn btn-outline w-full justify-start"
                 onClick={testLowStockAlert}
@@ -354,7 +348,7 @@ export function SettingsPanel() {
                 <TestTube className="h-4 w-4" />
                 Test Webhook
               </button>
-              
+
               {import.meta.env.VITE_EMAILJS_USER_ID && (
                 <button
                   className="btn btn-outline w-full justify-start"
@@ -364,7 +358,7 @@ export function SettingsPanel() {
                       const emailjsServiceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
                       const emailjsTemplateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
                       const emailjsUserId = import.meta.env.VITE_EMAILJS_USER_ID;
-                      
+
                       if (emailjsServiceId && emailjsTemplateId && emailjsUserId) {
                         const success = await sendLowStockEmail(
                           'Test: Low Stock Alert',

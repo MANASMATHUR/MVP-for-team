@@ -8,7 +8,7 @@ import { Dashboard } from './features/dashboard/Dashboard';
 import { Roster } from './features/dashboard/Roster';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { supabase } from './lib/supabaseClient';
+import { supabase, getCurrentUser } from './lib/supabaseClient';
 import {
   Bell,
   Settings,
@@ -34,12 +34,13 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error: userError } = await supabase.auth.getUser();
-        if (userError) {
-          console.error('Error fetching user:', userError);
+        // Use the safe helper that doesn't throw on missing session
+        const user = await getCurrentUser();
+        if (!user) {
+          // No session yet, AuthGate will handle this
           return;
         }
-        setUserEmail(data.user?.email ?? '');
+        setUserEmail(user.email ?? '');
 
         const { data: lowStockItems, error: stockError } = await supabase
           .from('jerseys')
