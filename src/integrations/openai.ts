@@ -53,7 +53,7 @@ export async function buildReorderEmailDraftAI(
 ) {
   const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
   if (!key) return fallback;
-  
+
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -91,7 +91,7 @@ export async function analyzeInventory(): Promise<InventoryAnalysis> {
     const { data: jerseys } = await supabase
       .from('jerseys')
       .select('*');
-    
+
     await supabase
       .from('activity_logs')
       .select('*')
@@ -151,7 +151,7 @@ export async function analyzeInventory(): Promise<InventoryAnalysis> {
 
     const data = await res.json();
     const analysisText = data.choices?.[0]?.message?.content?.trim();
-    
+
     try {
       return JSON.parse(analysisText);
     } catch {
@@ -235,7 +235,7 @@ export async function optimizeOrderQuantity(
 
     const data = await res.json();
     const optimizationText = data.choices?.[0]?.message?.content?.trim();
-    
+
     try {
       return JSON.parse(optimizationText);
     } catch {
@@ -277,7 +277,7 @@ export async function generateInventoryReport(): Promise<string> {
     const { data: jerseys } = await supabase
       .from('jerseys')
       .select('*');
-    
+
     const { data: callLogs } = await supabase
       .from('call_logs')
       .select('*')
@@ -410,13 +410,13 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
 
     const data = await res.json();
     const suggestionsText = data.choices?.[0]?.message?.content?.trim();
-    
+
     const suggestions = suggestionsText
       .split('\n')
       .filter((line: string) => line.trim().length > 0)
       .map((line: string) => line.replace(/^\d+\.\s*/, '').replace(/^[-*]\s*/, '').trim())
       .filter((line: string) => line.length > 10);
-    
+
     return suggestions.length > 0 ? suggestions : [
       'Implement automated reorder alerts',
       'Set up inventory tracking dashboards',
@@ -433,7 +433,7 @@ export async function suggestInventoryImprovements(): Promise<string[]> {
     ];
   }
 }
-  
+
 export interface VoiceCommand {
   type: 'add' | 'remove' | 'delete' | 'set' | 'turn_in' | 'laundry_return' | 'order' | 'show' | 'filter' | 'generate' | 'unknown';
   player_name?: string;
@@ -457,19 +457,19 @@ function loadChatHistoryFromStorage(): ChatMessage[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) return parsed.slice(-50);
-  } catch {}
+  } catch { }
   return [];
 }
 
 function saveChatHistoryToStorage(history: ChatMessage[]): void {
   try {
     localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(history.slice(-50)));
-  } catch {}
+  } catch { }
 }
 
 export function resetConversationMemory() {
   chatHistory = [];
-  try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch {}
+  try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { }
 }
 
 export async function getConversationalReply(userText: string, opts?: {
@@ -637,11 +637,12 @@ export async function interpretVoiceCommandWithAI(transcript: string, _currentIn
 - Listen to very casual, conversational, even noisy English describing events. The input could include multiple unrelated sentences, dictation, notes, or informal/ungrammatical language.
 - Extract ALL inventory actions described, even if mixed with small talk or vague references.
 - Always output a JSON array describing each action as a structured object.
-- Focus on these top 4 events:
+- Focus on these top 5 events:
   1. Reduce inventory because jersey was given away (to player, fan, staff, friend, etc)
   2. Reduce inventory because jersey was sent to cleaners/laundry (these will be unavailable 2-3 days)
-  3. Add inventory because an order was placed (track vendor if possible, e.g. Nike, New Era)
-  4. Add inventory because item was received (either from an order, or just back from laundry)
+  3. Permanently delete/remove items from the system (e.g. data correction, lost items)
+  4. Add inventory because an order was placed (track vendor if possible, e.g. Nike, New Era)
+  5. Add inventory because item was received (either from an order, or just back from laundry)
 - Include relevant information:
   - Player name (if any)
   - Edition/style (Icon, Association, Statement, City, Limited, etc)
@@ -664,6 +665,16 @@ Should reply with:
 [
   {"type":"add", "edition":"Icon", "quantity":5, "vendor":"New Era", "notes":"order_placed"},
   {"type":"laundry_return", "edition":"Statement", "quantity":3}
+]
+
+- "Delete two city jerseys" or "Remove 2 city jerseys" (This is a permanent deletion/correction)
+[
+  {"type": "delete", "edition": "City", "quantity": 2}
+]
+
+- "Delete 1 size 50 Icon jersey for Jalen Green"
+[
+  {"type": "delete", "edition": "Icon", "quantity": 1, "size": "50", "player_name": "Jalen Green"}
 ]
 
 - If user says “Put these 2 jerseys in Kevin’s locker but only keep 3 total there.”, make a note about locker limit.
