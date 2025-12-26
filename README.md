@@ -34,6 +34,80 @@ A comprehensive inventory management system for professional basketball teams, f
 - **Icons**: Lucide React
 - **Notifications**: React Hot Toast
 
+## 🏗️ System Architecture
+
+The Houston Inventory Management System follows a modern serverless architecture, leveraging powerful integrations for AI and real-time data.
+
+```mermaid
+graph TD
+    User((Equipment Manager))
+    
+    subgraph "Frontend (React + Vite)"
+        UI[React Components]
+        State[Global State / Hooks]
+        Voice[Audio Recorder / Whisper SDK]
+    end
+    
+    subgraph "Backend Services"
+        Supabase[(Supabase PostgreSQL)]
+        Auth[Supabase Auth]
+    end
+    
+    subgraph "External Integrations"
+        OpenAI[OpenAI gpt-4o-mini / Whisper]
+        Make[Make.com Webhooks]
+        EmailJS[EmailJS Notifications]
+    end
+    
+    User --> UI
+    UI <--> State
+    State <--> Supabase
+    UI --> Voice
+    Voice --> OpenAI
+    UI --> OpenAI
+    Supabase -.-> Make
+    State --> EmailJS
+```
+
+## 🔄 Data Flows
+
+### 1. Voice Command Inventory Update
+This flow shows how a natural language command like "Add 5 Jalen Green jerseys" is processed.
+
+```mermaid
+sequenceDiagram
+    participant EM as Equipment Manager
+    participant APP as React App
+    participant WH as OpenAI Whisper
+    participant GPT as OpenAI GPT-4o-mini
+    participant DB as Supabase DB
+
+    EM->>APP: Speak "Add 5 Jalen Green jerseys"
+    APP->>WH: Send Audio Blob
+    WH-->>APP: Return Text Transcript
+    APP->>GPT: Send Transcript + Context
+    GPT-->>APP: Return Structured JSON Action
+    APP->>DB: Update 'jerseys' table
+    DB-->>APP: Confirm Success (Real-time)
+    APP-->>EM: UI Feedback (Success Toast)
+```
+
+### 2. AI-Powered Insights & Automated Alerts
+How the system analyzes inventory and triggers external workflows.
+
+```mermaid
+graph LR
+    DB[(Supabase)] --> Analysis[analyzeInventory AI]
+    Analysis --> Dashboard[Dashboard Analytics]
+    
+    DB --> Trigger{Low Stock?}
+    Trigger -- Yes --> Make[Make.com Webhook]
+    Trigger -- Yes --> Email[EmailJS Alert]
+    
+    Make --> Slack[Slack/Internal Notif]
+```
+
+
 ## Setup Instructions
 
 ### 1. Clone and Install Dependencies
@@ -121,9 +195,29 @@ Try these voice commands:
 - Set user preferences
 - Test integrations
 - Generate AI-powered reports
+- Generate AI-powered reports
 - View integration status
 
+## 🧩 Component Breakdown
+
+### **Supabase (The Core)**
+- **Real-time Engine**: Automatically updates the UI when inventory changes are made via voice or manual entry.
+- **Row Level Security (RLS)**: Ensures that only authorized team members can modify jersey stock levels.
+- **PostgreSQL**: Stores the main `jerseys` table, `activity_logs` for audit trails, and `call_logs`.
+
+### **OpenAI (The Brain)**
+- **Whisper-1**: Transcribes audio commands with high accuracy, even in noisy equipment rooms.
+- **GPT-4o-mini**: 
+  - **Command Interpretation**: Converts transcribed text into structured JSON for database updates.
+  - **Inventory Analysis**: Scans current stock levels to predict shortages and suggest reorder quantities.
+  - **Report Generation**: Synthesizes complex data into human-readable business reports.
+
+### **Automation Layer**
+- **Make.com**: Connects Supabase triggers to external services for advanced enterprise workflows.
+- **EmailJS**: Handles immediate communication when stock hits critical thresholds.
+
 ## Database Schema
+
 
 ### Core Tables
 - `jerseys`: Main inventory items
